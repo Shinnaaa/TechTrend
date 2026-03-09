@@ -6,3 +6,4 @@ raw_intel.json
 DAILY_REPORT.md
 .DS_Store
 .claude/
+# history/ and seen_urls.json are intentionally tracked by git

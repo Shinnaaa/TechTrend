@@ -1,14 +1,18 @@
 """
 fetcher.py — Data Collection Engine
-Scrapes GitHub Trending and Hugging Face Daily Papers,
-outputs cleaned raw_intel.json.
+Sources: GitHub Trending, HuggingFace Daily Papers,
+         Hacker News Top (Algolia API), Product Hunt (RSS)
+Outputs: raw_intel.json (items marked is_new),
+         seen_urls.json (persistent dedup store)
 """
 
 import json
 import re
 import time
 import logging
+import xml.etree.ElementTree as ET
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -18,11 +22,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 GITHUB_TRENDING_URLS = {
-    "python": "https://github.com/trending/python?since=daily",
+    "python":     "https://github.com/trending/python?since=daily",
     "typescript": "https://github.com/trending/typescript?since=daily",
-    "all": "https://github.com/trending?since=daily",
+    "all":        "https://github.com/trending?since=daily",
 }
-HF_PAPERS_API = "https://huggingface.co/api/daily_papers"
+HF_PAPERS_API  = "https://huggingface.co/api/daily_papers"
+HN_ALGOLIA_API = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=20"
+PH_RSS_URL     = "https://www.producthunt.com/feed"
+
+SEEN_URLS_PATH = Path("seen_urls.json")
 
 HEADERS = {
     "User-Agent": (
@@ -33,13 +41,14 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds
-TIMEOUT = 20.0
+MAX_RETRIES  = 3
+RETRY_DELAY  = 2
+TIMEOUT      = 20.0
 
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _strip_html(text: str) -> str:
-    """Remove HTML tags and normalize whitespace."""
     text = re.sub(r"<[^>]+>", "", text)
     return re.sub(r"\s+", " ", text).strip()
 
@@ -58,6 +67,21 @@ def _fetch_with_retry(client: httpx.Client, url: str, **kwargs) -> Optional[http
     return None
 
 
+def _load_seen_urls() -> dict[str, str]:
+    """Returns {url: first_seen_date}."""
+    if SEEN_URLS_PATH.exists():
+        with open(SEEN_URLS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_seen_urls(seen: dict[str, str]) -> None:
+    with open(SEEN_URLS_PATH, "w", encoding="utf-8") as f:
+        json.dump(seen, f, ensure_ascii=False, indent=2)
+
+
+# ── Fetchers ──────────────────────────────────────────────────────────────────
+
 def fetch_github_trending(language_key: str, url: str) -> list[dict]:
     items = []
     with httpx.Client(headers=HEADERS, follow_redirects=True) as client:
@@ -71,41 +95,29 @@ def fetch_github_trending(language_key: str, url: str) -> list[dict]:
 
     for repo in repos[:20]:
         try:
-            # Name
             name_tag = repo.select_one("h2 a")
             if not name_tag:
                 continue
             full_name = _strip_html(name_tag.get_text()).replace("\n", "").replace(" ", "")
             link = "https://github.com" + name_tag["href"].strip()
 
-            # Description
-            desc_tag = repo.select_one("p")
-            description = _strip_html(desc_tag.get_text()) if desc_tag else ""
-
-            # Stars total
-            stars_tag = repo.select_one("a[href$='/stargazers']")
-            stars = _strip_html(stars_tag.get_text()) if stars_tag else "N/A"
-
-            # Stars today
-            today_tag = repo.select_one("span.d-inline-block.float-sm-right")
-            stars_today = _strip_html(today_tag.get_text()) if today_tag else "N/A"
-
-            # Language tag on card (may differ from query lang)
-            lang_tag = repo.select_one("span[itemprop='programmingLanguage']")
-            lang = _strip_html(lang_tag.get_text()) if lang_tag else language_key
+            desc_tag    = repo.select_one("p")
+            stars_tag   = repo.select_one("a[href$='/stargazers']")
+            today_tag   = repo.select_one("span.d-inline-block.float-sm-right")
+            lang_tag    = repo.select_one("span[itemprop='programmingLanguage']")
 
             items.append({
-                "source": "github_trending",
-                "category": language_key,
-                "name": full_name,
-                "description": description,
-                "language": lang,
-                "stars": stars,
-                "stars_today": stars_today,
-                "url": link,
+                "source":      "github_trending",
+                "category":    language_key,
+                "name":        full_name,
+                "description": _strip_html(desc_tag.get_text()) if desc_tag else "",
+                "language":    _strip_html(lang_tag.get_text()) if lang_tag else language_key,
+                "stars":       _strip_html(stars_tag.get_text()) if stars_tag else "N/A",
+                "stars_today": _strip_html(today_tag.get_text()) if today_tag else "N/A",
+                "url":         link,
             })
         except Exception as exc:
-            log.debug("Parse error on repo entry: %s", exc)
+            log.debug("Parse error on GitHub repo: %s", exc)
 
     return items
 
@@ -127,63 +139,165 @@ def fetch_hf_daily_papers() -> list[dict]:
 
     for entry in data[:20]:
         try:
-            paper = entry.get("paper", {})
+            paper    = entry.get("paper", {})
             paper_id = paper.get("id", "")
-            title = _strip_html(paper.get("title", ""))
             abstract = _strip_html(paper.get("summary", ""))
-            # Truncate very long abstracts for downstream prompt efficiency
             if len(abstract) > 600:
                 abstract = abstract[:597] + "..."
-            upvotes = entry.get("numComments", 0)
-            pub_date = paper.get("publishedAt", "")[:10]
 
             items.append({
-                "source": "hf_daily_papers",
-                "title": title,
-                "abstract": abstract,
-                "upvotes": upvotes,
-                "published": pub_date,
-                "url": f"https://huggingface.co/papers/{paper_id}",
+                "source":    "hf_daily_papers",
+                "title":     _strip_html(paper.get("title", "")),
+                "abstract":  abstract,
+                "upvotes":   entry.get("numComments", 0),
+                "published": paper.get("publishedAt", "")[:10],
+                "url":       f"https://huggingface.co/papers/{paper_id}",
             })
         except Exception as exc:
-            log.debug("Parse error on HF paper entry: %s", exc)
+            log.debug("Parse error on HF paper: %s", exc)
 
     return items
 
 
+def fetch_hn_top() -> list[dict]:
+    """Hacker News front page via Algolia API (single request)."""
+    items = []
+    with httpx.Client(headers=HEADERS, follow_redirects=True) as client:
+        resp = _fetch_with_retry(client, HN_ALGOLIA_API)
+        if resp is None:
+            return items
+
+    try:
+        data = resp.json()
+    except Exception as exc:
+        log.error("Failed to parse HN JSON: %s", exc)
+        return items
+
+    hits = data.get("hits", [])
+    log.info("Hacker News: found %d stories", len(hits))
+
+    for hit in hits:
+        url = hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID','')}"
+        items.append({
+            "source":   "hacker_news",
+            "title":    _strip_html(hit.get("title", "")),
+            "points":   hit.get("points", 0),
+            "comments": hit.get("num_comments", 0),
+            "author":   hit.get("author", ""),
+            "url":      url,
+            "hn_url":   f"https://news.ycombinator.com/item?id={hit.get('objectID','')}",
+        })
+
+    return items
+
+
+def fetch_product_hunt() -> list[dict]:
+    """Product Hunt daily top products via Atom feed."""
+    items = []
+    with httpx.Client(headers=HEADERS, follow_redirects=True) as client:
+        resp = _fetch_with_retry(client, PH_RSS_URL)
+        if resp is None:
+            return items
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError as exc:
+        log.error("Failed to parse PH feed: %s", exc)
+        return items
+
+    # Atom namespace
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", ns)
+    log.info("Product Hunt Atom feed: found %d entries", len(entries))
+
+    for entry in entries[:15]:
+        try:
+            title = _strip_html(entry.findtext("atom:title", "", ns))
+            # <link rel="alternate" href="..."/>
+            link_el = entry.find("atom:link[@rel='alternate']", ns)
+            link = link_el.attrib.get("href", "") if link_el is not None else ""
+            summary = _strip_html(entry.findtext("atom:summary", "", ns))
+            if len(summary) > 300:
+                summary = summary[:297] + "..."
+
+            if not title or not link:
+                continue
+
+            items.append({
+                "source":      "product_hunt",
+                "title":       title,
+                "description": summary,
+                "url":         link,
+            })
+        except Exception as exc:
+            log.debug("Parse error on PH entry: %s", exc)
+
+    return items
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
 def run() -> None:
+    today = str(date.today())
+    seen_urls = _load_seen_urls()
+    prev_count = len(seen_urls)
+
     all_items: list[dict] = []
 
     # GitHub Trending
     for lang_key, url in GITHUB_TRENDING_URLS.items():
         log.info("Fetching GitHub Trending: %s", lang_key)
-        items = fetch_github_trending(lang_key, url)
-        all_items.extend(items)
+        all_items.extend(fetch_github_trending(lang_key, url))
 
     # Hugging Face
     log.info("Fetching HF Daily Papers")
-    hf_items = fetch_hf_daily_papers()
-    all_items.extend(hf_items)
+    all_items.extend(fetch_hf_daily_papers())
 
-    # Deduplicate GitHub repos by URL
-    seen_urls: set[str] = set()
+    # Hacker News
+    log.info("Fetching Hacker News Top")
+    all_items.extend(fetch_hn_top())
+
+    # Product Hunt
+    log.info("Fetching Product Hunt")
+    all_items.extend(fetch_product_hunt())
+
+    # Deduplicate within this batch, mark is_new
+    batch_seen: set[str] = set()
     deduped: list[dict] = []
+    new_count = 0
+
     for item in all_items:
         url = item.get("url", "")
-        if url not in seen_urls:
-            seen_urls.add(url)
-            deduped.append(item)
+        if not url or url in batch_seen:
+            continue
+        batch_seen.add(url)
+
+        is_new = url not in seen_urls
+        item["is_new"] = is_new
+        if is_new:
+            seen_urls[url] = today
+            new_count += 1
+
+        deduped.append(item)
+
+    # Persist seen URLs
+    _save_seen_urls(seen_urls)
 
     output = {
-        "date": str(date.today()),
-        "total": len(deduped),
-        "items": deduped,
+        "date":      today,
+        "total":     len(deduped),
+        "new_count": new_count,
+        "items":     deduped,
     }
 
     with open("raw_intel.json", "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
-    log.info("Saved %d items to raw_intel.json", len(deduped))
+    log.info(
+        "Saved %d items (%d new, %d already seen) to raw_intel.json",
+        len(deduped), new_count, len(deduped) - new_count
+    )
+    log.info("seen_urls.json: %d → %d total tracked URLs", prev_count, len(seen_urls))
 
 
 if __name__ == "__main__":

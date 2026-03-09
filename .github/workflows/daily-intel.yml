@@ -48,6 +48,10 @@ jobs:
 
       - name: Step 4 — Format for Jekyll
         id: meta
+        env:
+          OPENAI_API_KEY:  ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL:    ${{ secrets.OPENAI_MODEL }}
         run: |
           python formatter.py
           echo "report_date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"

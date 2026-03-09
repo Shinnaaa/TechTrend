@@ -6,15 +6,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write          # 允许推回 seen_urls.json 和 history/
+  contents: write
 
 jobs:
+  # ── Job 1: 抓取 → 分析 → 推送微信 → 保存状态 ──────────────────────────────
   run-pipeline:
+    name: Fetch / Summarize / Push
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      report_date: ${{ steps.meta.outputs.report_date }}
 
     steps:
-      - name: Checkout
+      - name: Checkout TechTrend repo
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -36,12 +40,18 @@ jobs:
           OPENAI_MODEL:    ${{ secrets.OPENAI_MODEL }}
         run: python summarizer.py
 
-      - name: Step 3 — Push
+      - name: Step 3 — Push to PushPlus
         env:
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: python pusher.py
 
-      - name: Save state back to repo
+      - name: Step 4 — Format for Jekyll
+        id: meta
+        run: |
+          python formatter.py
+          echo "report_date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - name: Save state back to TechTrend repo
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -57,4 +67,54 @@ jobs:
           path: |
             raw_intel.json
             DAILY_REPORT.md
+            _formatted/
           retention-days: 7
+
+      - name: Upload formatted post as artifact (for sync job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: formatted-post-${{ github.run_id }}
+          path: _formatted/
+          retention-days: 1
+
+  # ── Job 2: 同步到个人网站仓库 ─────────────────────────────────────────────
+  sync-to-website:
+    name: Sync to Website
+    runs-on: ubuntu-latest
+    needs: run-pipeline          # 必须在 Job 1 成功后才执行
+    timeout-minutes: 10
+
+    steps:
+      - name: Download formatted post
+        uses: actions/download-artifact@v4
+        with:
+          name: formatted-post-${{ github.run_id }}
+          path: _formatted/
+
+      - name: Checkout website repo
+        uses: actions/checkout@v4
+        with:
+          repository: Shinnaaa/Shinnaaa.github.io
+          token: ${{ secrets.SYNC_PAT }}
+          path: website
+
+      - name: Copy post to _posts/
+        run: |
+          mkdir -p website/_posts
+          cp _formatted/*.md website/_posts/
+          echo "Copied files:"
+          ls -lh website/_posts/*intel*.md
+
+      - name: Commit and push to website repo
+        run: |
+          cd website
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add _posts/
+          if git diff --cached --quiet; then
+            echo "ℹ️  No changes to commit — post may already exist."
+          else
+            git commit -m "feat: add daily intel post [${{ needs.run-pipeline.outputs.report_date }}]"
+            git push
+            echo "✅ Website repo updated successfully."
+          fi

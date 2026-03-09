@@ -109,6 +109,7 @@ def _build_front_matter(report_date: date, excerpt: str) -> str:
     safe_excerpt = excerpt.replace("'", "''")
     return f"""\
 ---
+title: 'Node 1 今日技术情报 · {report_date}'
 permalink: /posts/{yyyy}/{mm}/{slug}/
 tags:
   - AI

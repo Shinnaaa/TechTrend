@@ -1,0 +1,8 @@
+venv/
+.env
+__pycache__/
+*.pyc
+raw_intel.json
+DAILY_REPORT.md
+.DS_Store
+.claude/

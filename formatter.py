@@ -91,7 +91,7 @@ def _wrap_trilingual(zh: str, en: str, ja: str) -> str:
     def _block(css_cls: str, lang: str, content: str, hidden: bool = False) -> str:
         hidden_attr = " hidden" if hidden else ""
         return (
-            f'<div class="lang-block {css_cls}" lang="{lang}"{hidden_attr}>\n\n'
+            f'<div class="lang-block {css_cls}" lang="{lang}"{hidden_attr} markdown="1">\n\n'
             f'{content.strip()}\n\n'
             f'</div>'
         )

@@ -132,15 +132,19 @@ def run() -> None:
     client = OpenAI(**client_kwargs)
 
     log.info("Generating weekly report with model=%s ...", MODEL)
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": prompt},
-        ],
-        temperature=0.5,
-        max_tokens=3000,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user",   "content": prompt},
+            ],
+            temperature=0.5,
+            max_tokens=3000,
+        )
+    except Exception as exc:
+        log.error("API call failed (model=%s): %s", MODEL, exc)
+        raise
     weekly_content = response.choices[0].message.content or ""
 
     # Save locally

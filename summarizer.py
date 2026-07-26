@@ -191,15 +191,19 @@ def _format_ph(items: list[dict]) -> str:
 
 def _call_api(client: OpenAI, prompt: str) -> str:
     log.info("Calling API model=%s ...", MODEL)
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": prompt},
-        ],
-        temperature=0.4,
-        max_tokens=3500,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user",   "content": prompt},
+            ],
+            temperature=0.4,
+            max_tokens=3500,
+        )
+    except Exception as exc:
+        log.error("API call failed (model=%s): %s", MODEL, exc)
+        raise
     return response.choices[0].message.content or ""
 
 

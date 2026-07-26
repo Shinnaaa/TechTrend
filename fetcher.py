@@ -26,10 +26,11 @@ GITHUB_TRENDING_URLS = {
     "typescript": "https://github.com/trending/typescript?since=daily",
     "all":        "https://github.com/trending?since=daily",
 }
-HF_PAPERS_API  = "https://huggingface.co/api/daily_papers"
-HF_MODELS_API  = "https://huggingface.co/api/models?sort=trending&limit=20&full=False"
-HN_ALGOLIA_API = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=20"
-PH_RSS_URL     = "https://www.producthunt.com/feed"
+HF_PAPERS_API        = "https://huggingface.co/api/daily_papers"
+HF_MODELS_API        = "https://huggingface.co/api/models?sort=trending&limit=20&full=False"
+HN_ALGOLIA_API       = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=20"
+PH_RSS_URL           = "https://www.producthunt.com/feed"
+REDDIT_LOCALLLAMA_RSS = "https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day"
 
 SEEN_URLS_PATH = Path("seen_urls.json")
 
@@ -227,6 +228,55 @@ def fetch_hn_top() -> list[dict]:
     return items
 
 
+def fetch_reddit_localllama() -> list[dict]:
+    """r/LocalLLaMA top-of-day via Atom RSS — no API key needed."""
+    items = []
+    with httpx.Client(headers=HEADERS, follow_redirects=True) as client:
+        resp = _fetch_with_retry(client, REDDIT_LOCALLLAMA_RSS)
+        if resp is None:
+            return items
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError as exc:
+        log.error("Failed to parse Reddit feed: %s", exc)
+        return items
+
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", ns)
+    log.info("Reddit r/LocalLLaMA: found %d entries", len(entries))
+
+    for entry in entries[:20]:
+        try:
+            title = _strip_html(entry.findtext("atom:title", "", ns))
+            link_el = entry.find("atom:link[@rel='alternate']", ns)
+            if link_el is None:
+                link_el = entry.find("atom:link", ns)
+            reddit_url = link_el.attrib.get("href", "") if link_el is not None else ""
+
+            # For link posts, extract the external URL from HTML content
+            content = entry.findtext("atom:content", "", ns) or ""
+            url_match = re.search(
+                r'href="(https?://(?!(?:www\.)?reddit\.com)[^"]+)"', content
+            )
+            external_url = url_match.group(1) if url_match else ""
+
+            if not title or not reddit_url:
+                continue
+
+            items.append({
+                "source":     "reddit_localllama",
+                "title":      title,
+                "url":        external_url or reddit_url,
+                "reddit_url": reddit_url,
+                "author":     entry.findtext("atom:author/atom:name", "", ns),
+            })
+        except Exception as exc:
+            log.debug("Parse error on Reddit entry: %s", exc)
+
+    return items
+
+
 def fetch_product_hunt() -> list[dict]:
     """Product Hunt daily top products via Atom feed."""
     items = []
@@ -295,6 +345,10 @@ def run() -> None:
     # Hacker News
     log.info("Fetching Hacker News Top")
     all_items.extend(fetch_hn_top())
+
+    # Reddit r/LocalLLaMA
+    log.info("Fetching Reddit r/LocalLLaMA")
+    all_items.extend(fetch_reddit_localllama())
 
     # Product Hunt
     log.info("Fetching Product Hunt")

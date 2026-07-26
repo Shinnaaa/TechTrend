@@ -24,6 +24,7 @@ MAX_HF_ITEMS        = 8
 MAX_HF_MODELS_ITEMS = 10
 MAX_HN_ITEMS        = 8
 MAX_PH_ITEMS        = 6
+MAX_REDDIT_ITEMS    = 10
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
@@ -86,6 +87,11 @@ USER_PROMPT_TEMPLATE = """\
 **[标题](链接)** 👍N 💬N
 🗣 [社区在争论什么，或帖子的核心工程结论是什么]
 
+## 🧵 Reddit r/LocalLLaMA 今日热帖
+挑 3-5 条有实质内容的，跳过纯问答或已被 GitHub/HN 覆盖的。格式：
+**[标题](链接)**
+🗣 [核心信息：社区在讨论什么技术结论，或帖子分享了哪个具体测试结果/发现]
+
 ## 🚀 Product Hunt 今日新品
 每个入选产品格式：
 **[产品名](链接)**
@@ -114,6 +120,9 @@ USER_PROMPT_TEMPLATE = """\
 
 ### Hacker News Top（新条目）
 {hn_data}
+
+### Reddit r/LocalLLaMA 今日热帖
+{reddit_data}
 
 ### Product Hunt（新产品）
 {ph_data}
@@ -190,6 +199,17 @@ def _format_hf_models(items: list[dict]) -> str:
     return "\n".join(lines) or "（今日无热门模型）"
 
 
+def _format_reddit(items: list[dict]) -> str:
+    lines = []
+    for item in items[:MAX_REDDIT_ITEMS]:
+        title      = item.get("title", "")
+        url        = item.get("url", "")
+        reddit_url = item.get("reddit_url", url)
+        # Always show Reddit discussion link so model knows it's community signal
+        lines.append(f"- [{title}]({url}) ([讨论]({reddit_url}))")
+    return "\n".join(lines) or "（今日无热帖）"
+
+
 def _format_hf(items: list[dict]) -> str:
     lines = []
     for item in items[:MAX_HF_ITEMS]:
@@ -264,6 +284,7 @@ def run() -> None:
     hf_model_items  = [i for i in new_items if i.get("source") == "hf_trending_models"]
     hf_items        = [i for i in new_items if i.get("source") == "hf_daily_papers"]
     hn_items        = [i for i in new_items if i.get("source") == "hacker_news"]
+    reddit_items    = [i for i in new_items if i.get("source") == "reddit_localllama"]
     ph_items        = [i for i in new_items if i.get("source") == "product_hunt"]
 
     trend_context = _load_history_context()
@@ -275,6 +296,7 @@ def run() -> None:
         hf_models_data = _format_hf_models(hf_model_items),
         hf_data        = _format_hf(hf_items),
         hn_data        = _format_hn(hn_items),
+        reddit_data    = _format_reddit(reddit_items),
         ph_data        = _format_ph(ph_items),
     )
 

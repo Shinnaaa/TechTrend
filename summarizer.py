@@ -25,6 +25,7 @@ MAX_HF_MODELS_ITEMS = 10
 MAX_HN_ITEMS        = 8
 MAX_PH_ITEMS        = 6
 MAX_REDDIT_ITEMS    = 10
+MIN_NEW_ITEMS       = 5   # fewer than this → skip report and push
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
@@ -288,6 +289,11 @@ def run() -> None:
         "Total items: %d, new: %d, skipped (already seen): %d",
         len(all_items), len(new_items), len(all_items) - len(new_items)
     )
+
+    if len(new_items) < MIN_NEW_ITEMS:
+        log.info("Only %d new items (threshold %d) — skipping report.", len(new_items), MIN_NEW_ITEMS)
+        print(f"⏭️  新条目不足 {MIN_NEW_ITEMS} 条，跳过今日报告。")
+        return
 
     github_items    = [i for i in new_items if i.get("source") == "github_trending"]
     hf_model_items  = [i for i in new_items if i.get("source") == "hf_trending_models"]

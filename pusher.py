@@ -25,9 +25,9 @@ def run() -> None:
         raise EnvironmentError("PUSHPLUS_TOKEN environment variable is not set.")
 
     if not REPORT_PATH.exists():
-        raise FileNotFoundError(
-            f"{REPORT_PATH} not found. Run summarizer.py first."
-        )
+        log.info("%s not found — summarizer skipped, nothing to push.", REPORT_PATH)
+        print("⏭️  无报告文件，跳过推送。")
+        return
 
     content = REPORT_PATH.read_text(encoding="utf-8")
     log.info("Report loaded: %d chars", len(content))

@@ -127,8 +127,9 @@ excerpt: '{safe_excerpt}'
 
 def run() -> None:
     if not REPORT_PATH.exists():
-        log.error("%s not found — run summarizer.py first.", REPORT_PATH)
-        sys.exit(1)
+        log.info("%s not found — summarizer skipped, nothing to format.", REPORT_PATH)
+        print("⏭️  无报告文件，跳过格式化。")
+        sys.exit(0)
 
     raw = REPORT_PATH.read_text(encoding="utf-8")
     if not raw.strip():

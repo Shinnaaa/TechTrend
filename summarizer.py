@@ -19,10 +19,11 @@ RAW_INTEL_PATH = Path("raw_intel.json")
 REPORT_PATH    = Path("DAILY_REPORT.md")
 HISTORY_DIR    = Path("history")
 
-MAX_GITHUB_ITEMS = 15
-MAX_HF_ITEMS     = 8
-MAX_HN_ITEMS     = 8
-MAX_PH_ITEMS     = 6
+MAX_GITHUB_ITEMS    = 15
+MAX_HF_ITEMS        = 8
+MAX_HF_MODELS_ITEMS = 10
+MAX_HN_ITEMS        = 8
+MAX_PH_ITEMS        = 6
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
@@ -46,6 +47,12 @@ SYSTEM_PROMPT = """\
 - 将英文描述直译为中文充当点评
 - 三个形容词堆叠（"快速、高效、易用"）
 - 没有具体对比就说"更好"或"更强"
+
+**句式禁令（结构性套话，每出现一次扣分）：**
+- "不是又一个 [X]，而是 [Y]" —— 直接说 Y 在哪个具体测试/场景下比 X 快多少、省多少、准多少
+- "X 杀手" / "X 替代品" —— 说清楚在哪个具体场景替代，哪个场景不能替代
+- "重新定义了 X" / "颠覆了 X" —— 必须跟具体数据，否则删掉这四个字直接说结论
+- 任何以"这意味着……"结尾的句子 —— 读者自己会推断，不需要你代劳
 """
 
 USER_PROMPT_TEMPLATE = """\
@@ -61,6 +68,12 @@ USER_PROMPT_TEMPLATE = """\
 **[项目名](链接)** `语言` ⭐今日+N
 💡 [洞见：说清它解决了什么具体问题、用什么技术手段、和哪个现有方案比有何不同]
 🎯 [行动：本周可以做的一件具体的事；如暂无行动价值，写"观察：关注 X 指标再决策"]
+
+## 🤗 HuggingFace 热门模型
+从今日 trending 中挑 3-5 个真正值得关注的，其余跳过。格式：
+**[模型名](链接)** `任务类型` ❤️N ⬇️N/月
+💡 [为什么此刻冒头：具体的技术差异或基准数字；对比哪个现有模型；适合替换哪个工作流中的哪个环节]
+🎯 [本周可做的一件具体的事，或"同质化，跳过"]
 
 ## 🧠 AI/ML 前沿论文
 每篇入选论文格式：
@@ -92,6 +105,9 @@ USER_PROMPT_TEMPLATE = """\
 
 ### GitHub Trending（新项目）
 {github_data}
+
+### HuggingFace 热门模型（今日 trending）
+{hf_models_data}
 
 ### HF Daily Papers（新论文）
 {hf_data}
@@ -158,6 +174,20 @@ def _format_github(items: list[dict]) -> str:
                 f"{item.get('description','')}"
             )
     return "\n".join(lines) or "（今日无新项目）"
+
+
+def _format_hf_models(items: list[dict]) -> str:
+    lines = []
+    for item in items[:MAX_HF_MODELS_ITEMS]:
+        pipeline = item.get("pipeline_tag", "unknown")
+        likes    = item.get("likes", 0)
+        dl       = item.get("downloads", 0)
+        dl_str   = f"{dl // 1000}k" if dl >= 1000 else str(dl)
+        lines.append(
+            f"- [{item['title']}]({item['url']}) "
+            f"`{pipeline}` ❤️{likes} ⬇️{dl_str}/月"
+        )
+    return "\n".join(lines) or "（今日无热门模型）"
 
 
 def _format_hf(items: list[dict]) -> str:
@@ -230,20 +260,22 @@ def run() -> None:
         len(all_items), len(new_items), len(all_items) - len(new_items)
     )
 
-    github_items = [i for i in new_items if i.get("source") == "github_trending"]
-    hf_items     = [i for i in new_items if i.get("source") == "hf_daily_papers"]
-    hn_items     = [i for i in new_items if i.get("source") == "hacker_news"]
-    ph_items     = [i for i in new_items if i.get("source") == "product_hunt"]
+    github_items    = [i for i in new_items if i.get("source") == "github_trending"]
+    hf_model_items  = [i for i in new_items if i.get("source") == "hf_trending_models"]
+    hf_items        = [i for i in new_items if i.get("source") == "hf_daily_papers"]
+    hn_items        = [i for i in new_items if i.get("source") == "hacker_news"]
+    ph_items        = [i for i in new_items if i.get("source") == "product_hunt"]
 
     trend_context = _load_history_context()
 
     prompt = USER_PROMPT_TEMPLATE.format(
-        date          = report_date,
-        trend_context = trend_context,
-        github_data   = _format_github(github_items),
-        hf_data       = _format_hf(hf_items),
-        hn_data       = _format_hn(hn_items),
-        ph_data       = _format_ph(ph_items),
+        date           = report_date,
+        trend_context  = trend_context,
+        github_data    = _format_github(github_items),
+        hf_models_data = _format_hf_models(hf_model_items),
+        hf_data        = _format_hf(hf_items),
+        hn_data        = _format_hn(hn_items),
+        ph_data        = _format_ph(ph_items),
     )
 
     report_content = _call_api(client, prompt)

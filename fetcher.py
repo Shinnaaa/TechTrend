@@ -27,6 +27,7 @@ GITHUB_TRENDING_URLS = {
     "all":        "https://github.com/trending?since=daily",
 }
 HF_PAPERS_API  = "https://huggingface.co/api/daily_papers"
+HF_MODELS_API  = "https://huggingface.co/api/models?sort=trending&limit=20&full=False"
 HN_ALGOLIA_API = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=20"
 PH_RSS_URL     = "https://www.producthunt.com/feed"
 
@@ -159,6 +160,41 @@ def fetch_hf_daily_papers() -> list[dict]:
     return items
 
 
+def fetch_hf_trending_models() -> list[dict]:
+    items = []
+    with httpx.Client(headers=HEADERS, follow_redirects=True) as client:
+        resp = _fetch_with_retry(client, HF_MODELS_API)
+        if resp is None:
+            return items
+
+    try:
+        data = resp.json()
+    except Exception as exc:
+        log.error("Failed to parse HF models JSON: %s", exc)
+        return items
+
+    log.info("HF Trending Models: found %d entries", len(data))
+
+    for entry in data[:20]:
+        try:
+            model_id = entry.get("id", "")
+            if not model_id:
+                continue
+            items.append({
+                "source":       "hf_trending_models",
+                "title":        model_id,
+                "pipeline_tag": entry.get("pipeline_tag", ""),
+                "likes":        entry.get("likes", 0),
+                "downloads":    entry.get("downloads", 0),
+                "tags":         entry.get("tags", [])[:8],
+                "url":          f"https://huggingface.co/{model_id}",
+            })
+        except Exception as exc:
+            log.debug("Parse error on HF model: %s", exc)
+
+    return items
+
+
 def fetch_hn_top() -> list[dict]:
     """Hacker News front page via Algolia API (single request)."""
     items = []
@@ -252,6 +288,9 @@ def run() -> None:
     # Hugging Face
     log.info("Fetching HF Daily Papers")
     all_items.extend(fetch_hf_daily_papers())
+
+    log.info("Fetching HF Trending Models")
+    all_items.extend(fetch_hf_trending_models())
 
     # Hacker News
     log.info("Fetching Hacker News Top")

@@ -61,6 +61,11 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 ### 2026-07 模型名变更
 服务商将模型名改为 `deepseek-v4-pro` / `deepseek-v4-flash`，旧名称全部 400。已在 Secret 中更新为 `deepseek-v4-flash`。
 
+### 2026-08 迁移后报告变成空文件（formatter.py 报 "DAILY_REPORT.md is empty" 退出 1）
+- 根因：`deepseek-v4-flash` 默认开启 thinking 模式（effort=high），`summarizer.py` 设的 `max_tokens=3500` 全被 `reasoning_content` 吃掉，最终 `message.content` 是空字符串。API 调用本身是 200 OK，不会报错，所以只有下游 formatter.py 的空文件检查能发现。
+- 修复：`summarizer.py` 和 `formatter.py`（翻译调用）都加了 `extra_body={"thinking": {"type": "disabled"}}` 显式关闭 thinking。`summarizer.py` 额外加了空 content 时把完整 response dump 到日志，方便以后排查。
+- 同批修的次要问题：`fetcher.py` 的 HF Trending Models 请求 `sort=trending` 已失效（HuggingFace 把字段改名成 `trendingScore`），会连续 400 三次重试失败，当天该来源直接空缺。已改成 `sort=trendingScore&direction=-1`。
+
 ### 写作质量问题
 每条 GitHub Trending 分析都套用"这不是又一个X，而是Y，直接攻击了Z的痛点"模板。
 - 根因：`summarizer.py` 的格式提示写了"和哪个现有方案比有何不同"，模型据此生成对比结构

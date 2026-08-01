@@ -82,8 +82,11 @@ def _translate(client, text: str, target_lang: str) -> str:
             {"role": "user",   "content": text},
         ],
         temperature=0.3,
+        # See summarizer.py: deepseek-v4-flash thinks by default, which can
+        # leave content empty. Translation just needs the direct output.
+        extra_body={"thinking": {"type": "disabled"}},
     )
-    return resp.choices[0].message.content.strip()
+    return (resp.choices[0].message.content or "").strip()
 
 
 def _wrap_trilingual(zh: str, en: str, ja: str) -> str:

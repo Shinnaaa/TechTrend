@@ -260,11 +260,23 @@ def _call_api(client: OpenAI, prompt: str) -> str:
             ],
             temperature=0.4,
             max_tokens=3500,
+            # deepseek-v4-flash has thinking mode on by default (effort=high),
+            # which burns max_tokens on hidden reasoning_content and leaves
+            # content empty. This report just needs the final markdown, so
+            # disable it explicitly rather than relying on the model default.
+            extra_body={"thinking": {"type": "disabled"}},
         )
     except Exception as exc:
         log.error("API call failed (model=%s): %s", MODEL, exc)
         raise
-    return response.choices[0].message.content or ""
+    content = response.choices[0].message.content or ""
+    if not content.strip():
+        finish_reason = response.choices[0].finish_reason
+        log.error(
+            "API returned empty content (model=%s, finish_reason=%s). Full response: %s",
+            MODEL, finish_reason, response.model_dump_json(),
+        )
+    return content
 
 
 def run() -> None:

@@ -27,7 +27,7 @@ GITHUB_TRENDING_URLS = {
     "all":        "https://github.com/trending?since=daily",
 }
 HF_PAPERS_API        = "https://huggingface.co/api/daily_papers"
-HF_MODELS_API        = "https://huggingface.co/api/models?sort=trending&limit=20&full=False"
+HF_MODELS_API        = "https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=20&full=False"
 HN_ALGOLIA_API       = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=20"
 PH_RSS_URL           = "https://www.producthunt.com/feed"
 REDDIT_LOCALLLAMA_RSS = "https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day"

@@ -249,33 +249,71 @@ def _format_ph(items: list[dict]) -> str:
     return "\n".join(lines) or "（今日无新产品）"
 
 
+# reasoning_tokens and the final content share one max_tokens budget on
+# deepseek-v4-flash — there's no separate allowance for thinking. This needs
+# to be generous enough to cover a full high-effort reasoning pass (effort
+# can't be dialed below "high"; low/medium silently map to it) on top of the
+# ~3000-token report itself.
+THINKING_MAX_TOKENS = 7000
+FALLBACK_MAX_TOKENS = 3500
+
+
+def _create_completion(client: OpenAI, prompt: str, *, thinking: bool):
+    kwargs = dict(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": prompt},
+        ],
+        max_tokens=THINKING_MAX_TOKENS if thinking else FALLBACK_MAX_TOKENS,
+        extra_body={"thinking": {"type": "enabled" if thinking else "disabled"}},
+    )
+    if not thinking:
+        # thinking mode doesn't support sampling params at all; only set
+        # temperature on the non-thinking path.
+        kwargs["temperature"] = 0.4
+    return client.chat.completions.create(**kwargs)
+
+
+def _log_usage(label: str, response) -> str:
+    content = response.choices[0].message.content or ""
+    usage = response.usage
+    reasoning_tokens = None
+    if usage and usage.completion_tokens_details:
+        reasoning_tokens = usage.completion_tokens_details.reasoning_tokens
+    log.info(
+        "%s: %d content chars, completion_tokens=%s, reasoning_tokens=%s, finish_reason=%s",
+        label, len(content),
+        getattr(usage, "completion_tokens", "?"), reasoning_tokens,
+        response.choices[0].finish_reason,
+    )
+    return content
+
+
 def _call_api(client: OpenAI, prompt: str) -> str:
-    log.info("Calling API model=%s ...", MODEL)
+    log.info("Calling API model=%s (thinking enabled) ...", MODEL)
     try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": prompt},
-            ],
-            temperature=0.4,
-            max_tokens=3500,
-            # deepseek-v4-flash has thinking mode on by default (effort=high),
-            # which burns max_tokens on hidden reasoning_content and leaves
-            # content empty. This report just needs the final markdown, so
-            # disable it explicitly rather than relying on the model default.
-            extra_body={"thinking": {"type": "disabled"}},
-        )
+        response = _create_completion(client, prompt, thinking=True)
     except Exception as exc:
         log.error("API call failed (model=%s): %s", MODEL, exc)
         raise
-    content = response.choices[0].message.content or ""
+    content = _log_usage("Thinking-mode response", response)
+
     if not content.strip():
-        finish_reason = response.choices[0].finish_reason
-        log.error(
-            "API returned empty content (model=%s, finish_reason=%s). Full response: %s",
-            MODEL, finish_reason, response.model_dump_json(),
+        log.warning(
+            "Thinking-mode call returned empty content — reasoning likely consumed "
+            "the full %d-token budget. Retrying with thinking disabled.",
+            THINKING_MAX_TOKENS,
         )
+        try:
+            response = _create_completion(client, prompt, thinking=False)
+        except Exception as exc:
+            log.error("Fallback API call failed (model=%s): %s", MODEL, exc)
+            raise
+        content = _log_usage("Fallback (non-thinking) response", response)
+        if not content.strip():
+            log.error("Fallback call also returned empty content. Full response: %s", response.model_dump_json())
+
     return content
 
 

@@ -62,8 +62,11 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 服务商将模型名改为 `deepseek-v4-pro` / `deepseek-v4-flash`，旧名称全部 400。已在 Secret 中更新为 `deepseek-v4-flash`。
 
 ### 2026-08 迁移后报告变成空文件（formatter.py 报 "DAILY_REPORT.md is empty" 退出 1）
-- 根因：`deepseek-v4-flash` 默认开启 thinking 模式（effort=high），`summarizer.py` 设的 `max_tokens=3500` 全被 `reasoning_content` 吃掉，最终 `message.content` 是空字符串。API 调用本身是 200 OK，不会报错，所以只有下游 formatter.py 的空文件检查能发现。
-- 修复：`summarizer.py` 和 `formatter.py`（翻译调用）都加了 `extra_body={"thinking": {"type": "disabled"}}` 显式关闭 thinking。`summarizer.py` 额外加了空 content 时把完整 response dump 到日志，方便以后排查。
+- 根因：`deepseek-v4-flash` 默认开启 thinking 模式（effort=high，且 low/medium 会被服务端静默映射成 high，没法调低），reasoning_content 和最终 content 共用同一个 `max_tokens` 预算。`summarizer.py` 原来设的 `max_tokens=3500` 全被推理吃掉，`message.content` 变成空字符串。API 调用本身是 200 OK，不会报错，只有下游 formatter.py 的空文件检查能发现。
+- 修复思路的取舍：
+  - 一开始简单粗暴地关了 thinking（`extra_body={"thinking":{"type":"disabled"}}`），能跑但放弃了推理可能带来的分析质量提升。
+  - 最终版本：`summarizer.py` 保持 thinking **开启**，`max_tokens` 从 3500 提到 `THINKING_MAX_TOKENS=7000` 给推理留够空间；每次调用把 `usage.completion_tokens_details.reasoning_tokens` 记进日志，方便后续根据实际消耗再调这个数字。如果 content 还是空的（说明某天推理格外啰嗦，7000 token 也不够），自动退化成 `FALLBACK_MAX_TOKENS=3500` + thinking 关闭重试一次，两次都空才真正报错。
+  - `formatter.py` 的翻译调用维持 thinking 关闭：纯翻译任务不需要推理，开启只会多等一倍时间。
 - 同批修的次要问题：`fetcher.py` 的 HF Trending Models 请求 `sort=trending` 已失效（HuggingFace 把字段改名成 `trendingScore`），会连续 400 三次重试失败，当天该来源直接空缺。已改成 `sort=trendingScore&direction=-1`。
 
 ### 写作质量问题

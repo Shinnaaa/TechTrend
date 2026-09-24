@@ -1,22 +1,23 @@
 """
-formatter.py — Jekyll Post Formatter
-Reads DAILY_REPORT.md, translates to EN and JA via DeepSeek,
-wraps in trilingual divs, prepends Jekyll front matter,
-saves to _formatted/YYYY-MM-DD-intel.md
+formatter.py — Jekyll Post Formatter (optional website publishing)
+Reads DAILY_REPORT.md, translates it into the other languages in
+website.languages, wraps each language in a lang-block div, prepends Jekyll
+front matter and saves _formatted/YYYY-MM-DD-intel.md.
 """
 
 import logging
-import os
 import re
 import sys
 from datetime import date
-from pathlib import Path
+
+from config import CONFIG, FORMATTED_DIR, LANGUAGES, REPORT_PATH, llm_client, thinking_body
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-REPORT_PATH = Path("DAILY_REPORT.md")
-OUTPUT_DIR  = Path("_formatted")
+SOURCE_LANG = CONFIG["report"]["language"]
+# Report language first, then the others in configured order
+POST_LANGS  = [SOURCE_LANG] + [l for l in CONFIG["website"]["languages"] if l != SOURCE_LANG and l in LANGUAGES]
 
 _TRANSLATE_SYSTEM = (
     "You are a professional technical translator. "
@@ -26,7 +27,7 @@ _TRANSLATE_SYSTEM = (
     "output ONLY the translated Markdown with no explanation."
 )
 
-_LANG_NAMES = {"en": "English", "ja": "Japanese"}
+_LANG_NAMES = {"zh": "Simplified Chinese", "en": "English", "ja": "Japanese"}
 
 
 def _strip_existing_front_matter(content: str) -> str:
@@ -99,47 +100,48 @@ def _translate(client, text: str, target_lang: str) -> str:
     system = _TRANSLATE_SYSTEM.format(lang=lang_name)
     log.info("Translating to %s (%d chars)…", lang_name, len(text))
     resp = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "deepseek-chat"),
+        model=CONFIG["llm"]["model"],
         messages=[
             {"role": "system", "content": system},
             {"role": "user",   "content": text},
         ],
         temperature=0.3,
-        # See summarizer.py: deepseek-v4-flash thinks by default, which can
-        # leave content empty. Translation just needs the direct output.
-        extra_body={"thinking": {"type": "disabled"}},
+        # Translation needs no reasoning; with it on the call takes twice as long.
+        **thinking_body(False),
     )
     return (resp.choices[0].message.content or "").strip()
 
 
-def _wrap_trilingual(zh: str, en: str, ja: str) -> str:
-    """Wrap three language versions in lang-block divs for Jekyll/Kramdown."""
-    def _block(css_cls: str, lang: str, content: str, hidden: bool = False) -> str:
-        hidden_attr = " hidden" if hidden else ""
-        return (
-            f'<div class="lang-block {css_cls}" lang="{lang}"{hidden_attr} markdown="1">\n\n'
+def _wrap_languages(bodies: dict[str, str]) -> str:
+    """One lang-block div per language; all but the first are hidden until the site's switcher shows them."""
+    blocks = []
+    for i, (lang, content) in enumerate(bodies.items()):
+        hidden_attr = " hidden" if i else ""
+        blocks.append(
+            f'<div class="lang-block lang-{lang}" lang="{lang}"{hidden_attr} markdown="1">\n\n'
             f'{content.strip()}\n\n'
             f'</div>'
         )
-    return "\n\n".join([
-        _block("lang-zh", "zh", zh),
-        _block("lang-en", "en", en, hidden=True),
-        _block("lang-ja", "ja", ja, hidden=True),
-    ])
+    return "\n\n".join(blocks)
+
+
+def _yaml_str(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 def _build_front_matter(report_date: date, excerpt: str, highlights: list[str]) -> str:
     yyyy = report_date.strftime("%Y")
     mm   = report_date.strftime("%m")
     slug = f"{yyyy}-{mm}-{report_date.strftime('%d')}-intel"
-    safe_excerpt = excerpt.replace("'", "''")
-    highlight_lines = "".join(f"\n  - '{h.replace(chr(39), chr(39) * 2)}'" for h in highlights)
+    titles = "".join(
+        f"title_{lang}: {_yaml_str(LANGUAGES[lang]['post_title'] + f' · {report_date}')}\n"
+        for lang in POST_LANGS[1:]
+    )
+    highlight_lines = "".join(f"\n  - {_yaml_str(h)}" for h in highlights)
     return f"""\
 ---
-title: '今日技术情报 · {report_date}'
-title_en: 'Daily Tech Intel · {report_date}'
-title_ja: '本日の技術インテリジェンス · {report_date}'
-permalink: /posts/{yyyy}/{mm}/{slug}/
+title: {_yaml_str(LANGUAGES[SOURCE_LANG]['post_title'] + f' · {report_date}')}
+{titles}permalink: /posts/{yyyy}/{mm}/{slug}/
 tags:
   - AI
   - GitHub
@@ -148,8 +150,8 @@ tags:
 categories:
   - Technical Intelligence
 hide_date: true
-trilingual: true
-excerpt: '{safe_excerpt}'
+trilingual: {"true" if len(POST_LANGS) > 1 else "false"}
+excerpt: {_yaml_str(excerpt)}
 highlights:{highlight_lines or " []"}
 ---
 """
@@ -158,7 +160,7 @@ highlights:{highlight_lines or " []"}
 def run() -> None:
     if not REPORT_PATH.exists():
         log.info("%s not found — summarizer skipped, nothing to format.", REPORT_PATH)
-        print("⏭️  无报告文件，跳过格式化。")
+        print("⏭️  No report today, nothing to format.")
         sys.exit(0)
 
     raw = REPORT_PATH.read_text(encoding="utf-8")
@@ -167,39 +169,29 @@ def run() -> None:
         sys.exit(1)
 
     today   = date.today()
-    zh_body = _strip_existing_front_matter(raw)
-    zh_body = _strip_leading_h1(zh_body)
-    if not zh_body.strip():
+    body = _strip_existing_front_matter(raw)
+    body = _strip_leading_h1(body)
+    if not body.strip():
         log.error("%s has no body after stripping front matter / title.", REPORT_PATH)
         sys.exit(1)
-    excerpt = _extract_excerpt(zh_body)
+    excerpt = _extract_excerpt(body)
 
-    # Translation — requires API credentials
-    api_key  = os.getenv("OPENAI_API_KEY", "")
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com")
+    bodies = {SOURCE_LANG: body}
+    targets = POST_LANGS[1:]
+    try:
+        client = llm_client() if targets else None
+        for lang in targets:
+            bodies[lang] = _translate(client, body, lang)
+    except Exception as exc:
+        log.warning("Translation failed (%s) — publishing the %s text for every language.", exc, SOURCE_LANG)
+        bodies = {lang: body for lang in POST_LANGS}
 
-    if api_key:
-        try:
-            from openai import OpenAI
-            client = OpenAI(api_key=api_key, base_url=base_url)
-            en_body = _translate(client, zh_body, "en")
-            ja_body = _translate(client, zh_body, "ja")
-        except Exception as exc:
-            log.warning("Translation failed (%s) — using Chinese only for all langs.", exc)
-            en_body = zh_body
-            ja_body = zh_body
-    else:
-        log.warning("OPENAI_API_KEY not set — skipping translation (all langs = ZH).")
-        en_body = zh_body
-        ja_body = zh_body
+    post = _build_front_matter(today, excerpt, _extract_highlights(body)) + "\n" + \
+        _wrap_languages({lang: _hard_wrap(text) for lang, text in bodies.items()})
 
-    body  = _wrap_trilingual(*(_hard_wrap(b) for b in (zh_body, en_body, ja_body)))
-    front = _build_front_matter(today, excerpt, _extract_highlights(zh_body))
-    post  = front + "\n" + body
-
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    FORMATTED_DIR.mkdir(exist_ok=True)
     filename    = f"{today}-intel.md"
-    output_path = OUTPUT_DIR / filename
+    output_path = FORMATTED_DIR / filename
     output_path.write_text(post, encoding="utf-8")
 
     log.info("Formatted post saved → %s (%d chars)", output_path, len(post))

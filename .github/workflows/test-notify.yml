@@ -1,26 +1,18 @@
-name: Weekly Tech Trend Report
-run-name: "📊 Weekly Report · ${{ github.run_number }} · by ${{ github.actor }}"
+name: Test Notifications
+run-name: "🔔 Test notifications · by ${{ github.actor }}"
 
+# Run this from the Actions tab after adding secrets: every configured channel
+# gets a short test message, and the log lists which channels are active.
 on:
-  schedule:
-    - cron: '0 1 * * 0'   # Sunday 01:00 UTC (09:00 in UTC+8). Turn off with weekly.enabled in config.yml.
   workflow_dispatch:
 
 permissions:
-  contents: write
-
-concurrency:
-  group: techtrend-data
-  cancel-in-progress: false
-
-env:
-  TECHTREND_DATA_DIR: data
+  contents: read
 
 jobs:
-  weekly-report:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,16 +26,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Load state (data branch)
+      - name: Send test message
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/state.sh load
-
-      - name: Generate & push weekly report
-        env:
-          OPENAI_API_KEY:       ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL:      ${{ secrets.OPENAI_BASE_URL || vars.OPENAI_BASE_URL }}
-          OPENAI_MODEL:         ${{ secrets.OPENAI_MODEL || vars.OPENAI_MODEL }}
           PUSHPLUS_TOKEN:       ${{ secrets.PUSHPLUS_TOKEN }}
           SERVERCHAN_SENDKEY:   ${{ secrets.SERVERCHAN_SENDKEY }}
           WECOM_WEBHOOK_URL:    ${{ secrets.WECOM_WEBHOOK_URL }}
@@ -65,11 +49,6 @@ jobs:
           NTFY_SERVER:          ${{ secrets.NTFY_SERVER }}
           NTFY_TOKEN:           ${{ secrets.NTFY_TOKEN }}
           WEBHOOK_URL:          ${{ secrets.WEBHOOK_URL }}
-        run: python weekly_report.py
-
-      - name: Save state (data branch)
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash scripts/state.sh save "weekly: $(date -u +'%Y-%m-%d')"
+          python pusher.py --list
+          python pusher.py --test

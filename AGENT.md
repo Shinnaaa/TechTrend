@@ -6,7 +6,9 @@
 
 ## 项目是什么
 
-自动化每日技术情报系统。每天从多个源抓取数据 → DeepSeek 分析总结 → PushPlus 推送微信 → 保存到 history/ → 同步到 Jekyll 网站。周日额外生成周报。
+自动化每日技术情报系统。每天从多个源抓取数据 → LLM（默认 DeepSeek）分析总结 → 推送到已配置的渠道（作者自己用 PushPlus 推微信）→ 保存到 data 分支 → 可选同步到 Jekyll 网站。周日额外生成周报。
+
+2026-09 起按"别人 fork 就能用"的标准通用化：非密钥设置都在 `config.yml`，推送渠道按 Secret 是否存在自动启用，运行数据移到 `data` 分支。仓库目前仍是私有，作者检查后再决定是否公开（许可证已选 MIT）。
 
 GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 
@@ -16,16 +18,22 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 
 | 文件 | 职责 |
 |------|------|
-| `fetcher.py` | 抓取所有数据源，输出 `raw_intel.json`，维护 `seen_urls.json` 去重 |
-| `summarizer.py` | 读 `raw_intel.json`，调 DeepSeek API，输出 `DAILY_REPORT.md` + `history/YYYY-MM-DD.md` |
-| `pusher.py` | 读 `DAILY_REPORT.md`，通过 PushPlus 推送到微信 |
-| `formatter.py` | 读 `DAILY_REPORT.md`，翻译三语（中/英/日），生成 Jekyll post 到 `_formatted/` |
-| `weekly_report.py` | 读最近 7 天 history/，生成周报，推送 PushPlus + 保存 `history/weekly_*.md` |
+| `config.yml` / `config.py` | 所有非密钥设置（报告语言、关注方向、数据源开关、LLM、网站语言）；`config.py` 合并默认值、读本地 `.env`、定义路径 |
+| `fetcher.py` | 抓取已启用的数据源，输出 `raw_intel.json`，维护 `data/seen_urls.json` 去重 |
+| `summarizer.py` | 按启用的数据源动态拼 prompt，调 LLM，输出 `DAILY_REPORT.md` + `data/history/YYYY-MM-DD.md` |
+| `notifiers.py` | 11 个推送渠道（PushPlus、Server酱、企业微信、飞书、钉钉、Telegram、Discord、Slack、邮件、ntfy、Webhook），按平台上限分段、转换 Markdown |
+| `pusher.py` | 推送日报；`--list` 看哪些渠道已配置，`--test` 发测试消息 |
+| `formatter.py` | 可选：翻译成 `website.languages`，生成 Jekyll post 到 `_formatted/`（含 `title_<lang>`、`highlights`、条目行硬换行） |
+| `weekly_report.py` | 读最近 7 天 history，生成周报并推送，保存 `data/history/weekly_*.md` |
+| `scripts/state.sh` | `load` 把 `data` 分支取到 `data/`（不存在就新建），`save` 提交回去 |
+| `tests/` | pytest：渠道请求格式和长度上限、prompt 拼装、配置合并、front matter |
 
 ## Workflow
 
-- `daily-intel.yml`：每天 UTC 00:00（北京 08:00）按序跑 fetcher → summarizer → pusher → formatter，再同步到 `Shinnaaa/Shinnaaa.github.io` 的 `_posts/`
+- `daily-intel.yml`：每天 UTC 00:00（北京 08:00）：load state → fetcher → summarizer → **save state** → pusher → formatter（仅当设置了 `WEBSITE_REPO` 变量）→ 同步到网站仓库的 `_posts/`。先存数据再推送，推送失败也不会让第二天重复分析。
 - `weekly-intel.yml`：每周日 UTC 01:00（北京 09:00）跑 weekly_report.py
+- `test-notify.yml`：手动触发，给所有已配置渠道发测试消息
+- 日报和周报都写 `data` 分支，用 `concurrency: techtrend-data` 防止同时推送冲突
 
 ---
 
@@ -47,16 +55,24 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 | Secret | 用途 |
 |--------|------|
 | `OPENAI_API_KEY` | DeepSeek 中转 API key |
-| `OPENAI_BASE_URL` | 中转 API 的 base URL（非官方 OpenAI） |
-| `OPENAI_MODEL` | 当前值：`deepseek-v4-flash`（2026-07 服务商改名，旧名称返回 400） |
-| `PUSHPLUS_TOKEN` | PushPlus 微信推送 token |
-| `SYNC_PAT` | 用于向 Shinnaaa.github.io 仓库写入的 GitHub PAT |
+| `OPENAI_BASE_URL` | 中转 API 的 base URL（非官方 OpenAI），覆盖 `config.yml` 的 `llm.base_url` |
+| `OPENAI_MODEL` | 当前值：`deepseek-v4-flash`（2026-07 服务商改名，旧名称返回 400），覆盖 `llm.model` |
+| `PUSHPLUS_TOKEN` | PushPlus 微信推送 token（作者唯一启用的渠道；其他渠道的 Secret 名见 README） |
+| `SYNC_PAT` | 用于向网站仓库写入的 GitHub PAT |
+
+另有仓库 **Variable** `WEBSITE_REPO = Shinnaaa/Shinnaaa.github.io`，控制是否生成并同步网站文章。
 
 **注意**：`OPENAI_MODEL` 依赖服务商，服务商改模型名会直接导致 workflow 400 报错。
 
 ---
 
 ## 已知问题与历史决策
+
+### 2026-09 通用化改造
+- 推送：`pusher.py` 只支持 PushPlus → `notifiers.py` 多渠道，有 Secret 就启用；所有渠道都失败时才让 job 失败。
+- LLM：`thinking` 参数是 DeepSeek 特有的，做成 `llm.thinking: true/false/null`，null 时不发送（适配 OpenAI、Claude、Gemini 等）。周报原来没传 thinking，v4-flash 默认开推理、3000 token 可能全被吃掉，现在明确关掉。
+- 数据：`history/`、`seen_urls.json` 从 main 移到 `data` 分支。原因：fork 默认只复制 main，别人拿到的是干净代码；main 也不再被每日 bot 提交刷屏。本地运行时数据在 `./data/`（gitignore）。
+- 2026-09-08 ~ 09-24 连续失败是 402 余额不足（不是模型改名），作者已充值；那段时间没有生成报告，没有补。
 
 ### 2026-07 模型名变更
 服务商将模型名改为 `deepseek-v4-pro` / `deepseek-v4-flash`，旧名称全部 400。已在 Secret 中更新为 `deepseek-v4-flash`。

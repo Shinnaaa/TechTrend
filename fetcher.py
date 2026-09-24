@@ -1,9 +1,10 @@
 """
 fetcher.py — Data Collection Engine
-Sources: GitHub Trending, HuggingFace Daily Papers,
-         Hacker News Top (Algolia API), Product Hunt (RSS)
+Sources (each switchable in config.yml): GitHub Trending, Hugging Face daily
+papers and trending models, Hacker News (Algolia API), Reddit (RSS),
+Product Hunt (RSS).
 Outputs: raw_intel.json (items marked is_new),
-         seen_urls.json (persistent dedup store)
+         data/seen_urls.json (persistent dedup store)
 """
 
 import json
@@ -12,27 +13,22 @@ import time
 import logging
 import xml.etree.ElementTree as ET
 from datetime import date
-from pathlib import Path
 from typing import Optional
 
 import httpx
 from bs4 import BeautifulSoup
 
+from config import CONFIG, RAW_INTEL_PATH, SEEN_URLS_PATH
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-GITHUB_TRENDING_URLS = {
-    "python":     "https://github.com/trending/python?since=daily",
-    "typescript": "https://github.com/trending/typescript?since=daily",
-    "all":        "https://github.com/trending?since=daily",
-}
+GITHUB_TRENDING_URL  = "https://github.com/trending{path}?since=daily"
 HF_PAPERS_API        = "https://huggingface.co/api/daily_papers"
 HF_MODELS_API        = "https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=20&full=False"
 HN_ALGOLIA_API       = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=20"
 PH_RSS_URL           = "https://www.producthunt.com/feed"
-REDDIT_LOCALLLAMA_RSS = "https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day"
-
-SEEN_URLS_PATH = Path("seen_urls.json")
+REDDIT_TOP_RSS       = "https://www.reddit.com/r/{subreddit}/top/.rss?t=day"
 
 HEADERS = {
     "User-Agent": (
@@ -78,6 +74,7 @@ def _load_seen_urls() -> dict[str, str]:
 
 
 def _save_seen_urls(seen: dict[str, str]) -> None:
+    SEEN_URLS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(SEEN_URLS_PATH, "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False, indent=2)
 
@@ -228,11 +225,11 @@ def fetch_hn_top() -> list[dict]:
     return items
 
 
-def fetch_reddit_localllama() -> list[dict]:
-    """r/LocalLLaMA top-of-day via Atom RSS — no API key needed."""
+def fetch_reddit(subreddit: str) -> list[dict]:
+    """A subreddit's top-of-day posts via Atom RSS — no API key needed."""
     items = []
     with httpx.Client(headers=HEADERS, follow_redirects=True) as client:
-        resp = _fetch_with_retry(client, REDDIT_LOCALLLAMA_RSS)
+        resp = _fetch_with_retry(client, REDDIT_TOP_RSS.format(subreddit=subreddit))
         if resp is None:
             return items
 
@@ -244,7 +241,7 @@ def fetch_reddit_localllama() -> list[dict]:
 
     ns = {"atom": "http://www.w3.org/2005/Atom"}
     entries = root.findall("atom:entry", ns)
-    log.info("Reddit r/LocalLLaMA: found %d entries", len(entries))
+    log.info("Reddit r/%s: found %d entries", subreddit, len(entries))
 
     for entry in entries[:20]:
         try:
@@ -265,7 +262,8 @@ def fetch_reddit_localllama() -> list[dict]:
                 continue
 
             items.append({
-                "source":     "reddit_localllama",
+                "source":     "reddit",
+                "subreddit":  subreddit,
                 "title":      title,
                 "url":        external_url or reddit_url,
                 "reddit_url": reddit_url,
@@ -329,30 +327,34 @@ def run() -> None:
     prev_count = len(seen_urls)
 
     all_items: list[dict] = []
+    sources = CONFIG["sources"]
 
-    # GitHub Trending
-    for lang_key, url in GITHUB_TRENDING_URLS.items():
-        log.info("Fetching GitHub Trending: %s", lang_key)
-        all_items.extend(fetch_github_trending(lang_key, url))
+    if sources["github_trending"]["enabled"]:
+        for lang_key in sources["github_trending"]["languages"]:
+            log.info("Fetching GitHub Trending: %s", lang_key)
+            url = GITHUB_TRENDING_URL.format(path="" if lang_key == "all" else f"/{lang_key}")
+            all_items.extend(fetch_github_trending(lang_key, url))
 
-    # Hugging Face
-    log.info("Fetching HF Daily Papers")
-    all_items.extend(fetch_hf_daily_papers())
+    if sources["huggingface_papers"]["enabled"]:
+        log.info("Fetching HF Daily Papers")
+        all_items.extend(fetch_hf_daily_papers())
 
-    log.info("Fetching HF Trending Models")
-    all_items.extend(fetch_hf_trending_models())
+    if sources["huggingface_models"]["enabled"]:
+        log.info("Fetching HF Trending Models")
+        all_items.extend(fetch_hf_trending_models())
 
-    # Hacker News
-    log.info("Fetching Hacker News Top")
-    all_items.extend(fetch_hn_top())
+    if sources["hacker_news"]["enabled"]:
+        log.info("Fetching Hacker News Top")
+        all_items.extend(fetch_hn_top())
 
-    # Reddit r/LocalLLaMA
-    log.info("Fetching Reddit r/LocalLLaMA")
-    all_items.extend(fetch_reddit_localllama())
+    if sources["reddit"]["enabled"]:
+        for subreddit in sources["reddit"]["subreddits"]:
+            log.info("Fetching Reddit r/%s", subreddit)
+            all_items.extend(fetch_reddit(subreddit))
 
-    # Product Hunt
-    log.info("Fetching Product Hunt")
-    all_items.extend(fetch_product_hunt())
+    if sources["product_hunt"]["enabled"]:
+        log.info("Fetching Product Hunt")
+        all_items.extend(fetch_product_hunt())
 
     # Deduplicate within this batch, mark is_new
     batch_seen: set[str] = set()
@@ -383,7 +385,7 @@ def run() -> None:
         "items":     deduped,
     }
 
-    with open("raw_intel.json", "w", encoding="utf-8") as f:
+    with open(RAW_INTEL_PATH, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
     log.info(

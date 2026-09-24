@@ -8,122 +8,224 @@
 
 <p align="center">
   A daily tech-intelligence briefing that reads GitHub, Hugging Face, Hacker News, Reddit and Product Hunt,<br>
-  writes opinionated analysis with an LLM, and delivers it to WeChat and a trilingual blog every morning.
+  writes opinionated analysis with any LLM, and delivers it to WeChat, Telegram, Slack, email and more.<br>
+  Runs free on GitHub Actions. No server.
 </p>
 
 <p align="center">
   <a href="https://github.com/Shinnaaa/TechTrend/actions/workflows/daily-intel.yml"><img alt="Daily Intel" src="https://github.com/Shinnaaa/TechTrend/actions/workflows/daily-intel.yml/badge.svg"></a>
-  <a href="https://github.com/Shinnaaa/TechTrend/actions/workflows/weekly-intel.yml"><img alt="Weekly Report" src="https://github.com/Shinnaaa/TechTrend/actions/workflows/weekly-intel.yml/badge.svg"></a>
   <img alt="Python 3.11" src="https://img.shields.io/badge/python-3.11-3776ab">
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 ---
 
 ## Why
 
-Most "AI news digests" restate the project description in nicer words. TechTrend is tuned for the opposite: every item must carry one non-obvious insight, a concrete comparison against a named alternative, real numbers where they exist, a stated limitation, and one thing you could actually try this week. Phrases like "worth watching" or "redefines X" are banned in the prompt, with bad/good examples the model is asked to follow.
+Most "AI news digests" restate the project description in nicer words. TechTrend is tuned for the opposite: every item must carry one non-obvious insight, a concrete comparison against a named alternative, real numbers where they exist, a stated limitation, and one thing you could try this week. Phrases like "worth watching" or "redefines X" are banned in the prompt, with bad/good examples the model is asked to follow.
 
 ## What you get
 
-**Every day at 08:00 Beijing time (00:00 UTC)**, a briefing with these sections:
-
-| Section | Source |
-|---|---|
-| 🔥 GitHub Trending picks | GitHub Trending (all languages, Python, TypeScript) |
-| 🤗 Hugging Face trending models | Hugging Face models API, sorted by `trendingScore` |
-| 🧠 AI/ML papers | Hugging Face Daily Papers |
-| 💬 Hacker News | Algolia HN front page |
-| 🧵 r/LocalLLaMA | Reddit top-of-day RSS |
-| 🚀 Product Hunt | Product Hunt RSS |
-| ⚡ Paradigm-shift signals | Cross-source synthesis, using the last 7 days as trend context |
-| 🛠️ This week's actions | Concrete PoCs, code reads or evaluations to try |
-
-A sample entry:
+**Every morning** a briefing like this, in Chinese, English or Japanese:
 
 > **[openwhispr](https://github.com/OpenWhispr/openwhispr)** `JavaScript` ⭐7,427 +121
 > 💡 Cross-platform speech-to-text: local Nvidia Parakeet / Whisper, cloud via BYOK. Compared with the per-minute Whisper API, local inference has zero marginal cost… Limitation: with BYOK the user manages keys and quotas across several vendors.
 > 🎯 This week: run local Parakeet on 10 recordings and compare latency and accuracy against the Whisper API.
 
-**Every Sunday at 09:00 Beijing time**, a weekly report distils the last 7 daily briefings into top signals, strengthening trends, emerging signals, counter-signals and next week's focus.
+| Section | Source |
+|---|---|
+| 🔥 GitHub Trending picks | GitHub Trending (languages of your choice) |
+| 🤗 Trending models | Hugging Face, sorted by `trendingScore` |
+| 🧠 AI/ML papers | Hugging Face Daily Papers |
+| 💬 Hacker News | Algolia HN front page |
+| 🧵 Reddit | Top-of-day posts from subreddits of your choice |
+| 🚀 Product Hunt | Product Hunt RSS |
+| ⚡ Paradigm-shift signals | Cross-source synthesis, with the last 7 days as trend context |
+| 🛠️ This week's actions | Concrete PoCs, code reads or evaluations to try |
+
+Every source can be switched off. Items already analysed on earlier days are skipped, and on quiet days (fewer than 5 new items) nothing is sent. **Every Sunday** a weekly report distils the week into top signals and trends.
+
+---
+
+## Quick Start
+
+About 10 minutes, all in the browser.
+
+### 1. Fork this repository
+
+Click **Fork**. Keep **"Copy the `main` branch only"** checked: your copy then starts with no history of its own, and the first run creates it.
+
+### 2. Get an LLM API key
+
+Any OpenAI-compatible API works. The default in [`config.yml`](config.yml) is DeepSeek, which is inexpensive and writes well in Chinese and English:
+
+| Provider | `llm.base_url` | `llm.model` | `llm.thinking` |
+|---|---|---|---|
+| DeepSeek *(default)* | `https://api.deepseek.com` | `deepseek-v4-flash` | `true` |
+| OpenAI | `https://api.openai.com/v1` | a model id from your account | `null` |
+| Anthropic Claude | `https://api.anthropic.com/v1/` | e.g. `claude-sonnet-5` | `null` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` | a Gemini model id | `null` |
+| Alibaba Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` | a Qwen model id | `null` |
+| Moonshot Kimi | `https://api.moonshot.cn/v1` | a Kimi model id | `null` |
+
+If you don't use DeepSeek, edit those three lines in `config.yml` (the pencil icon on GitHub edits in the browser). `thinking: null` matters: the `thinking` parameter is DeepSeek-specific, and other APIs may reject the request if it is sent.
+
+### 3. Add secrets
+
+In your fork, open **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+- `OPENAI_API_KEY` — your LLM key (the name is historical; it holds any provider's key)
+- the secrets of **at least one push channel** from the table below. Add several to receive the briefing in several places.
+
+### 4. Enable the workflows
+
+Forks start with Actions disabled. Open the **Actions** tab and click **"I understand my workflows, go ahead and enable them"**.
+
+### 5. Test it
+
+1. **Actions → Test Notifications → Run workflow.** Each configured channel receives a short test message; the log lists which channels are active.
+2. **Actions → Daily Tech Intel → Run workflow.** Your first briefing arrives in a few minutes.
+
+From then on it runs every day at 00:00 UTC. To change the time, edit the `cron` line in [`.github/workflows/daily-intel.yml`](.github/workflows/daily-intel.yml) (it is in UTC: `0 23 * * *` is 08:00 in Tokyo, `0 13 * * *` is 09:00 in New York).
+
+---
+
+## Push channels
+
+A channel is active when all its required secrets are set. Long briefings are split at section boundaries to fit each platform's message limit.
+
+| Channel | Required secrets | Optional | Where to get them |
+|---|---|---|---|
+| WeChat via PushPlus | `PUSHPLUS_TOKEN` | | [pushplus.plus](https://www.pushplus.plus/) → log in with WeChat → copy your token |
+| WeChat via ServerChan | `SERVERCHAN_SENDKEY` | | [sct.ftqq.com](https://sct.ftqq.com/) → SendKey |
+| WeCom group bot | `WECOM_WEBHOOK_URL` | | Group chat → ⋯ → Add group bot → copy webhook URL |
+| Feishu / Lark group bot | `FEISHU_WEBHOOK_URL` | `FEISHU_SECRET` | Group settings → Bots → Custom bot → webhook URL (+ signature secret if enabled) |
+| DingTalk group bot | `DINGTALK_WEBHOOK_URL` | `DINGTALK_SECRET` | Group settings → Bots → Custom → webhook URL (+ "sign" secret if enabled) |
+| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | | Create a bot with [@BotFather](https://t.me/BotFather); message it once, then read your chat id from `https://api.telegram.org/bot<token>/getUpdates` |
+| Discord | `DISCORD_WEBHOOK_URL` | | Channel settings → Integrations → Webhooks → New webhook → copy URL |
+| Slack | `SLACK_WEBHOOK_URL` | | [Create an app](https://api.slack.com/apps) → Incoming Webhooks → add to a channel |
+| Email (SMTP) | `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_TO` | `SMTP_PORT` (465), `EMAIL_FROM` | Your mail provider's SMTP settings. Gmail: `smtp.gmail.com` with an [app password](https://myaccount.google.com/apppasswords). `EMAIL_TO` takes a comma-separated list |
+| ntfy (phone push) | `NTFY_TOPIC` | `NTFY_SERVER`, `NTFY_TOKEN` | Pick a hard-to-guess topic name and subscribe to it in the [ntfy app](https://ntfy.sh/) |
+| Custom webhook | `WEBHOOK_URL` | | Receives `POST {"title", "content", "format": "markdown", "language"}` |
+
+To send to only some of the configured channels, list them under `notify.channels` in `config.yml`.
+
+---
+
+## Configuration
+
+Everything that isn't a secret is in [`config.yml`](config.yml). A few examples:
+
+**English briefing for a frontend team**
+
+```yaml
+report:
+  language: en
+  focus: "Frontend and browser tech: React, build tools, CSS, Web APIs, performance."
+```
+
+**More subreddits, different GitHub languages, no Product Hunt**
+
+```yaml
+sources:
+  github_trending:
+    languages: [all, rust, go]
+  reddit:
+    subreddits: [LocalLLaMA, MachineLearning, programming]
+  product_hunt:
+    enabled: false
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `report.language` | `zh` | Language of the briefing and push titles: `zh`, `en`, `ja` |
+| `report.focus` | empty | What your readers care about; steers selection and framing |
+| `report.min_new_items` | `5` | Skip the day below this many new items |
+| `llm.model`, `llm.base_url` | DeepSeek | Endpoint; the `OPENAI_MODEL` / `OPENAI_BASE_URL` secrets or variables override them |
+| `llm.thinking` | `true` | DeepSeek reasoning switch; `null` for every other provider |
+| `llm.max_tokens` | `7000` | Token budget (reasoning and report share it when thinking is on) |
+| `sources.<name>.enabled` / `max_items` | all on | Per-source switch and how many items go to the model |
+| `notify.channels` | `[]` (all configured) | Restrict delivery to these channels |
+| `weekly.enabled` | `true` | Sunday weekly report |
+| `website.languages` | `[zh, en, ja]` | Languages of the optional website post |
+
+---
+
+## Optional: publish to a website
+
+Each briefing can also become a post in a Jekyll site, translated into the languages in `website.languages` (this project's author runs it on [shinnaaa.github.io](https://shinnaaa.github.io/intel/)).
+
+1. Add a repository **variable** (Settings → Secrets and variables → Actions → Variables) `WEBSITE_REPO` = `owner/your-site-repo`.
+2. Add a secret `SYNC_PAT`: a [fine-grained token](https://github.com/settings/personal-access-tokens) with *Contents: read and write* on that repository.
+
+Posts go to `_posts/` as `YYYY-MM-DD-intel.md`, one `<div class="lang-block" lang="…">` per language plus `title_<lang>` and `highlights` in the front matter, for your site's templates to use.
+
+---
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A[fetcher.py<br>6 sources] -->|raw_intel.json| B[summarizer.py<br>LLM analysis]
-    B -->|DAILY_REPORT.md| C[pusher.py<br>PushPlus → WeChat]
-    B -->|DAILY_REPORT.md| D[formatter.py<br>zh → en / ja]
-    D -->|_formatted/*.md| E[Shinnaaa.github.io<br>_posts/]
-    B -->|history/YYYY-MM-DD.md| F[(history/)]
+    A[fetcher.py<br>sources] -->|raw_intel.json| B[summarizer.py<br>LLM analysis]
+    B -->|DAILY_REPORT.md| C[pusher.py<br>notifiers.py]
+    B -->|DAILY_REPORT.md| D[formatter.py<br>translate]
+    D -->|_formatted/*.md| E[(website repo)]
+    B -->|history/DATE.md| F[(data branch)]
     F -->|last 7 days| B
-    F -->|Sunday| G[weekly_report.py]
+    F -->|Sundays| G[weekly_report.py]
 ```
 
 | File | Role |
 |---|---|
-| `fetcher.py` | Scrapes and calls the 6 sources, with retries. Drops URLs already in `seen_urls.json` so the same project is never analysed twice. |
-| `summarizer.py` | Builds the prompt from new items plus 7 days of history headlines, calls the model, writes `DAILY_REPORT.md` and `history/<date>.md`. Skips the day when fewer than 5 new items were found. |
-| `pusher.py` | Sends the report to WeChat through PushPlus. Does nothing when there is no report. |
-| `formatter.py` | Translates the report to English and Japanese, wraps the three versions in language blocks and adds Jekyll front matter. |
-| `weekly_report.py` | Summarises the last 7 files in `history/` and pushes the weekly report. |
+| `config.yml`, `config.py` | Settings, defaults, paths |
+| `fetcher.py` | Pulls the enabled sources with retries; drops URLs seen on earlier days |
+| `summarizer.py` | Builds the prompt from new items plus 7 days of headlines, calls the model |
+| `notifiers.py`, `pusher.py` | Delivery channels; `pusher.py --list` / `--test` for checking your setup |
+| `formatter.py` | Optional website post: translation, language blocks, front matter |
+| `weekly_report.py` | Sunday summary of the week's briefings |
+| `scripts/state.sh` | Loads and saves run state on the `data` branch |
 
-The daily workflow commits `seen_urls.json` and `history/` back to this repository, so deduplication and trend context survive between runs (the weekly workflow commits `history/weekly_*.md`). It then copies the formatted post into the [Shinnaaa.github.io](https://github.com/Shinnaaa/Shinnaaa.github.io) repository, where it is published as a trilingual blog post.
+**State lives on the `data` branch** (`history/` with every briefing, and `seen_urls.json` for deduplication). The workflows check it out into `data/` and commit back after each run, so `main` holds only code and never collects bot commits. The branch is created on the first run.
 
 ### Design notes
 
-- **Reasoning budget.** The model runs with thinking enabled. Reasoning and the answer share one `max_tokens` budget, so the call uses 7,000 tokens and logs the reasoning-token count on every run. If the answer still comes back empty, it retries once with thinking disabled and 3,500 tokens before failing.
-- **Translation without thinking.** `formatter.py` disables thinking, since translation gains nothing from it and takes twice as long with it on. If translation fails, the post falls back to Chinese rather than blocking publication.
-- **Quiet days stay quiet.** Fewer than `MIN_NEW_ITEMS = 5` new items means no push and no post.
+- **Reasoning budget.** With DeepSeek thinking on, reasoning and the answer share one `max_tokens` budget. The call logs the reasoning-token count; if the answer comes back empty it retries once without thinking.
+- **State is saved before delivery**, so a broken push channel never makes the next day analyse the same items again.
+- **One broken channel doesn't stop the others.** The push step only fails when no channel got through.
 
-## Setup
+---
 
-### 1. Repository secrets
-
-| Secret | Purpose |
-|---|---|
-| `OPENAI_API_KEY` | Key for any OpenAI-compatible endpoint (currently a DeepSeek relay) |
-| `OPENAI_BASE_URL` | Base URL of that endpoint |
-| `OPENAI_MODEL` | Model name, e.g. `deepseek-v4-flash` |
-| `PUSHPLUS_TOKEN` | [PushPlus](https://www.pushplus.plus/) token for WeChat delivery |
-| `SYNC_PAT` | Fine-grained PAT with write access to the website repository |
-
-### 2. Run it
-
-The workflows run on schedule. To trigger one by hand:
-
-```bash
-gh workflow run daily-intel.yml  --repo Shinnaaa/TechTrend
-gh workflow run weekly-intel.yml --repo Shinnaaa/TechTrend
-```
-
-### 3. Run locally
+## Run locally
 
 ```bash
 pip install -r requirements.txt
-
-export OPENAI_API_KEY=...  OPENAI_BASE_URL=...  OPENAI_MODEL=deepseek-v4-flash
-export PUSHPLUS_TOKEN=...
+cp .env.example .env        # then fill in OPENAI_API_KEY and a channel
+python pusher.py --list     # which channels are configured
+python pusher.py --test     # send a test message
 
 python fetcher.py && python summarizer.py && python pusher.py
 ```
 
+Locally, state is kept in `./data/` (git-ignored). Tests: `pip install pytest && pytest`.
+
 ## Troubleshooting
 
-Start with `gh run view <run-id> --log-failed` and look at the status code of the API call:
+Open the failed run in the Actions tab, or run `gh run view <run-id> --log-failed`.
 
 | Symptom | Cause |
 |---|---|
-| `400` from the model API | The provider renamed the model. Update the `OPENAI_MODEL` secret. |
-| `402 Insufficient Balance` | The API account is out of credit. |
-| `DAILY_REPORT.md is empty` in the formatter | The model spent the whole token budget on reasoning. Check the logged reasoning-token count and raise `THINKING_MAX_TOKENS`. |
-| Weekly report says `No history files found` | No daily report succeeded that week. Fix the daily run first. |
+| `400` from the model API mentioning `thinking` | Your provider isn't DeepSeek: set `llm.thinking: null` |
+| `400` / `404` model not found | Wrong or renamed model: fix `llm.model` or the `OPENAI_MODEL` secret |
+| `401` from the model API | Wrong `OPENAI_API_KEY`, or the key doesn't match `llm.base_url` |
+| `402 Insufficient Balance` | The API account is out of credit |
+| `No push channel configured` warning | No channel has all its required secrets; see the table above |
+| `Model returned an empty report` | Reasoning used the whole budget: raise `llm.max_tokens` |
+| Nothing arrived, run is green, log says `skipping` | Fewer than `min_new_items` new items that day, by design |
 
-## Repository layout
+## Contributing
 
-```
-.github/workflows/   daily-intel.yml, weekly-intel.yml
-history/             one Markdown briefing per day, plus weekly_*.md (committed by CI)
-seen_urls.json       deduplication state (committed by CI)
-*.py                 pipeline stages
-AGENT.md             working notes for AI coding agents: decisions, pitfalls, history
-```
+Adding a push channel is one function plus one `Channel(...)` entry in [`notifiers.py`](notifiers.py), and a test in `tests/`. Adding a source is a fetch function in `fetcher.py`, a config entry, and a section guide in `summarizer.py`. Issues and pull requests are welcome.
+
+## License
+
+[MIT](LICENSE)

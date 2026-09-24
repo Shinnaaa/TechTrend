@@ -3,23 +3,37 @@ run-name: "📡 Daily Intel · ${{ github.run_number }} · by ${{ github.actor }
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # UTC 00:00 = 北京时间 08:00
+    - cron: '0 0 * * *'   # 00:00 UTC (08:00 in UTC+8). Change to suit your timezone.
   workflow_dispatch:
 
 permissions:
   contents: write
 
+# Daily and weekly runs both write to the data branch; never let them overlap.
+concurrency:
+  group: techtrend-data
+  cancel-in-progress: false
+
+env:
+  TECHTREND_DATA_DIR: data
+
 jobs:
-  # ── Job 1: 抓取 → 分析 → 推送微信 → 保存状态 ──────────────────────────────
+  # ── Job 1: fetch → analyse → save state → push → (format for website) ──────
   run-pipeline:
     name: Fetch / Summarize / Push
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       report_date: ${{ steps.meta.outputs.report_date }}
+      has_post:    ${{ steps.meta.outputs.has_post }}
+      posts_dir:   ${{ steps.meta.outputs.posts_dir }}
+    env:
+      OPENAI_API_KEY:  ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL || vars.OPENAI_BASE_URL }}
+      OPENAI_MODEL:    ${{ secrets.OPENAI_MODEL || vars.OPENAI_MODEL }}
 
     steps:
-      - name: Checkout TechTrend repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -31,38 +45,59 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Step 1 — Fetch
+      - name: Load state (data branch)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/state.sh load
+
+      - name: Fetch
         run: python fetcher.py
 
-      - name: Step 2 — Summarize
-        env:
-          OPENAI_API_KEY:  ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-          OPENAI_MODEL:    ${{ secrets.OPENAI_MODEL }}
+      - name: Summarize
         run: python summarizer.py
 
-      - name: Step 3 — Push to PushPlus
+      # Saved before pushing: a delivery problem must not make tomorrow re-analyse today's items.
+      - name: Save state (data branch)
         env:
-          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash scripts/state.sh save "daily: $(date -u +'%Y-%m-%d')"
+
+      - name: Push
+        env:
+          PUSHPLUS_TOKEN:       ${{ secrets.PUSHPLUS_TOKEN }}
+          SERVERCHAN_SENDKEY:   ${{ secrets.SERVERCHAN_SENDKEY }}
+          WECOM_WEBHOOK_URL:    ${{ secrets.WECOM_WEBHOOK_URL }}
+          FEISHU_WEBHOOK_URL:   ${{ secrets.FEISHU_WEBHOOK_URL }}
+          FEISHU_SECRET:        ${{ secrets.FEISHU_SECRET }}
+          DINGTALK_WEBHOOK_URL: ${{ secrets.DINGTALK_WEBHOOK_URL }}
+          DINGTALK_SECRET:      ${{ secrets.DINGTALK_SECRET }}
+          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL:  ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL:    ${{ secrets.SLACK_WEBHOOK_URL }}
+          SMTP_HOST:            ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:            ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME:        ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD:        ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM:           ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO:             ${{ secrets.EMAIL_TO }}
+          NTFY_TOPIC:           ${{ secrets.NTFY_TOPIC }}
+          NTFY_SERVER:          ${{ secrets.NTFY_SERVER }}
+          NTFY_TOKEN:           ${{ secrets.NTFY_TOKEN }}
+          WEBHOOK_URL:          ${{ secrets.WEBHOOK_URL }}
         run: python pusher.py
 
-      - name: Step 4 — Format for Jekyll
-        id: meta
-        env:
-          OPENAI_API_KEY:  ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-          OPENAI_MODEL:    ${{ secrets.OPENAI_MODEL }}
-        run: |
-          python formatter.py
-          echo "report_date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+      - name: Format for website
+        if: vars.WEBSITE_REPO != ''
+        run: python formatter.py
 
-      - name: Save state back to TechTrend repo
+      - name: Collect outputs
+        id: meta
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add seen_urls.json history/
-          git diff --cached --quiet || git commit -m "chore: update seen_urls and history [$(date +'%Y-%m-%d')]"
-          git push
+          echo "report_date=$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+          if ls _formatted/*.md >/dev/null 2>&1; then echo "has_post=true" >> "$GITHUB_OUTPUT"; fi
+          echo "posts_dir=$(python -c "from config import CONFIG; print(CONFIG['website']['posts_dir'])")" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifacts
         if: always()
@@ -74,52 +109,45 @@ jobs:
             DAILY_REPORT.md
             _formatted/
           retention-days: 7
+          if-no-files-found: ignore
 
-      - name: Upload formatted post as artifact (for sync job)
-        uses: actions/upload-artifact@v4
-        with:
-          name: formatted-post-${{ github.run_id }}
-          path: _formatted/
-          retention-days: 1
-
-  # ── Job 2: 同步到个人网站仓库 ─────────────────────────────────────────────
+  # ── Job 2 (optional): publish to a Jekyll website repository ────────────────
+  # Enabled by the WEBSITE_REPO variable (owner/repo) and the SYNC_PAT secret.
   sync-to-website:
     name: Sync to Website
     runs-on: ubuntu-latest
-    needs: run-pipeline          # 必须在 Job 1 成功后才执行
+    needs: run-pipeline
+    if: needs.run-pipeline.outputs.has_post == 'true' && vars.WEBSITE_REPO != ''
     timeout-minutes: 10
 
     steps:
       - name: Download formatted post
         uses: actions/download-artifact@v4
         with:
-          name: formatted-post-${{ github.run_id }}
-          path: _formatted/
+          name: daily-report-${{ github.run_id }}
+          path: artifact/
 
       - name: Checkout website repo
         uses: actions/checkout@v4
         with:
-          repository: Shinnaaa/Shinnaaa.github.io
+          repository: ${{ vars.WEBSITE_REPO }}
           token: ${{ secrets.SYNC_PAT }}
           path: website
 
-      - name: Copy post to _posts/
+      - name: Commit and push the post
+        env:
+          POSTS_DIR: ${{ needs.run-pipeline.outputs.posts_dir }}
         run: |
-          mkdir -p website/_posts
-          cp _formatted/*.md website/_posts/
-          echo "Copied files:"
-          ls -lh website/_posts/*intel*.md
-
-      - name: Commit and push to website repo
-        run: |
+          mkdir -p "website/$POSTS_DIR"
+          cp artifact/_formatted/*.md "website/$POSTS_DIR/"
           cd website
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add _posts/
+          git add "$POSTS_DIR"
           if git diff --cached --quiet; then
             echo "ℹ️  No changes to commit — post may already exist."
           else
             git commit -m "feat: add daily intel post [${{ needs.run-pipeline.outputs.report_date }}]"
             git push
-            echo "✅ Website repo updated successfully."
+            echo "✅ Website repo updated."
           fi

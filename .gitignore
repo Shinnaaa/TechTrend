@@ -7,4 +7,5 @@ DAILY_REPORT.md
 .DS_Store
 .claude/
 _formatted/
-# history/ and seen_urls.json are intentionally tracked by git
+# Run state (history, dedup store) lives on the `data` branch; CI checks it out here
+data/

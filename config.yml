@@ -1,0 +1,65 @@
+# TechTrend configuration.
+# Secrets (API keys, push tokens) never go here: set them as GitHub Actions
+# secrets, or as environment variables when running locally (see .env.example).
+
+report:
+  # Language of the briefing and the push messages: zh | en | ja
+  language: zh
+  # Optional: what your readers care about. Steers which items the model picks
+  # and how it frames them. Leave empty for a general engineering audience.
+  focus: ""
+  # Skip the day (no report, no push) when fewer new items than this were found.
+  min_new_items: 5
+
+llm:
+  # Any OpenAI-compatible endpoint. The env vars OPENAI_MODEL / OPENAI_BASE_URL
+  # (GitHub secrets or variables) override these two values.
+  model: deepseek-v4-flash
+  base_url: https://api.deepseek.com
+  # DeepSeek-style reasoning switch, sent as {"thinking": {"type": ...}}.
+  #   true  = reason before writing (better analysis, more tokens)
+  #   false = answer directly
+  #   null  = don't send the parameter (use this for OpenAI, Gemini, Claude, …)
+  thinking: true
+  # Token budget. With thinking on, reasoning and the report share it.
+  max_tokens: 7000
+
+sources:
+  github_trending:
+    enabled: true
+    # "all" = every language; otherwise GitHub's language slugs (python, rust, go, …)
+    languages: [python, typescript, all]
+    max_items: 15
+  huggingface_papers:
+    enabled: true
+    max_items: 8
+  huggingface_models:
+    enabled: true
+    max_items: 10
+  hacker_news:
+    enabled: true
+    max_items: 8
+  reddit:
+    enabled: true
+    subreddits: [LocalLLaMA]
+    max_items: 10
+  product_hunt:
+    enabled: true
+    max_items: 6
+
+notify:
+  # Push goes to every channel whose secrets are set (see README).
+  # To restrict that, list channel names here, e.g. [telegram, email].
+  channels: []
+
+weekly:
+  # Sunday trend report built from the last 7 daily briefings.
+  enabled: true
+
+website:
+  # Optional: publish each briefing as a Jekyll post in another repository.
+  # Turned on by setting the WEBSITE_REPO variable and the SYNC_PAT secret (see README).
+  # Languages of the post; the report language is included automatically and
+  # the others are machine-translated.
+  languages: [zh, en, ja]
+  posts_dir: _posts

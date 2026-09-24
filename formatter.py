@@ -70,6 +70,29 @@ def _extract_excerpt(body: str) -> str:
     return ""
 
 
+_BLOCK_STARTS = ("#", "-", "*", "+", "|", ">", "<", "```")
+
+
+def _hard_wrap(body: str) -> str:
+    """Keep each entry's lines apart (name / 💡 / 🎯 …) on the website.
+
+    Markdown joins consecutive lines into one paragraph; a trailing double space
+    turns the line break into <br>. Lines followed by a block element (list,
+    heading, table, HTML) are left alone.
+    """
+    lines = body.split("\n")
+    for i in range(len(lines) - 1):
+        cur, nxt = lines[i].rstrip(), lines[i + 1].strip()
+        if cur.strip() and nxt and not nxt.startswith(_BLOCK_STARTS) and not re.match(r"\d+\. ", nxt):
+            lines[i] = cur + "  "
+    return "\n".join(lines)
+
+
+def _extract_highlights(body: str, n: int = 3) -> list[str]:
+    """Names of the first n entries (their bold links), shown on the site's intel list."""
+    return re.findall(r"\*\*\[([^\]]+)\]\([^)]+\)\*\*", body)[:n]
+
+
 def _translate(client, text: str, target_lang: str) -> str:
     """Call DeepSeek to translate markdown to the target language."""
     lang_name = _LANG_NAMES[target_lang]
@@ -105,11 +128,12 @@ def _wrap_trilingual(zh: str, en: str, ja: str) -> str:
     ])
 
 
-def _build_front_matter(report_date: date, excerpt: str) -> str:
+def _build_front_matter(report_date: date, excerpt: str, highlights: list[str]) -> str:
     yyyy = report_date.strftime("%Y")
     mm   = report_date.strftime("%m")
     slug = f"{yyyy}-{mm}-{report_date.strftime('%d')}-intel"
     safe_excerpt = excerpt.replace("'", "''")
+    highlight_lines = "".join(f"\n  - '{h.replace(chr(39), chr(39) * 2)}'" for h in highlights)
     return f"""\
 ---
 title: '今日技术情报 · {report_date}'
@@ -126,6 +150,7 @@ categories:
 hide_date: true
 trilingual: true
 excerpt: '{safe_excerpt}'
+highlights:{highlight_lines or " []"}
 ---
 """
 
@@ -144,6 +169,9 @@ def run() -> None:
     today   = date.today()
     zh_body = _strip_existing_front_matter(raw)
     zh_body = _strip_leading_h1(zh_body)
+    if not zh_body.strip():
+        log.error("%s has no body after stripping front matter / title.", REPORT_PATH)
+        sys.exit(1)
     excerpt = _extract_excerpt(zh_body)
 
     # Translation — requires API credentials
@@ -165,8 +193,8 @@ def run() -> None:
         en_body = zh_body
         ja_body = zh_body
 
-    body  = _wrap_trilingual(zh_body, en_body, ja_body)
-    front = _build_front_matter(today, excerpt)
+    body  = _wrap_trilingual(*(_hard_wrap(b) for b in (zh_body, en_body, ja_body)))
+    front = _build_front_matter(today, excerpt, _extract_highlights(zh_body))
     post  = front + "\n" + body
 
     OUTPUT_DIR.mkdir(exist_ok=True)

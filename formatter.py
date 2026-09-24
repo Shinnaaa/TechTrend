@@ -113,6 +113,8 @@ def _build_front_matter(report_date: date, excerpt: str) -> str:
     return f"""\
 ---
 title: '今日技术情报 · {report_date}'
+title_en: 'Daily Tech Intel · {report_date}'
+title_ja: '本日の技術インテリジェンス · {report_date}'
 permalink: /posts/{yyyy}/{mm}/{slug}/
 tags:
   - AI

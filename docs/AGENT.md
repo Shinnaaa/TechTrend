@@ -8,7 +8,7 @@
 
 自动化每日技术情报系统。每天从多个源抓取数据 → LLM（默认 DeepSeek）分析总结 → 推送到已配置的渠道（作者自己用 PushPlus 推微信）→ 保存到 data 分支 → 可选同步到 Jekyll 网站。周日额外生成周报。
 
-2026-09 起按"别人 fork 就能用"的标准通用化：非密钥设置都在 `config.yml`，推送渠道按 Secret 是否存在自动启用，运行数据移到 `data` 分支。仓库目前仍是私有，作者检查后再决定是否公开（许可证已选 MIT）。
+2026-09 起按"别人 fork 就能用"的标准通用化：非密钥设置都在 `config.yml`，推送渠道按 Secret 是否存在自动启用，运行数据移到 `data` 分支。2026-09-26 公开，MIT 许可证。
 
 GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 
@@ -152,7 +152,6 @@ gh run watch <run-id> --repo Shinnaaa/TechTrend
 
 ## 潜在改进方向
 
-- Reddit 其他子版块（r/MachineLearning、r/programming）按需添加，方式相同
 - HF trending 目前仅按 trending 排序，可考虑按 `last_modified` 过滤近 7 天新发布的模型
-- `MIN_NEW_ITEMS = 5` 可根据实际情况调整
+- `report.min_new_items`（默认 5）可根据实际情况调整
 - formatter.py 翻译失败会 fallback 到纯中文，不影响推送，但 Jekyll 站显示三语时英/日版本为中文

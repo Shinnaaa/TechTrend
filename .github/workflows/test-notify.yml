@@ -50,5 +50,5 @@ jobs:
           NTFY_TOKEN:           ${{ secrets.NTFY_TOKEN }}
           WEBHOOK_URL:          ${{ secrets.WEBHOOK_URL }}
         run: |
-          python pusher.py --list
-          python pusher.py --test
+          python -m techtrend.pusher --list
+          python -m techtrend.pusher --test

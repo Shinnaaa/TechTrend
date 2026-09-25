@@ -8,8 +8,8 @@ import logging
 import sys
 from datetime import date, timedelta
 
-from config import CONFIG, HISTORY_DIR, LANGUAGES, lang_text, llm_client, thinking_body
-from notifiers import send_all
+from .config import CONFIG, HISTORY_DIR, LANGUAGES, lang_text, llm_client, thinking_body
+from .notifiers import send_all
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)

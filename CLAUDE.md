@@ -1,1 +1,1 @@
-@AGENT.md
+@docs/AGENT.md

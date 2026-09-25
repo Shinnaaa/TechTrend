@@ -10,7 +10,7 @@ import re
 import sys
 from datetime import date
 
-from config import CONFIG, FORMATTED_DIR, LANGUAGES, REPORT_PATH, llm_client, thinking_body
+from .config import CONFIG, FORMATTED_DIR, LANGUAGES, REPORT_PATH, llm_client, thinking_body
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)

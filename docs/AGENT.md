@@ -14,17 +14,21 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 
 ---
 
+## 目录结构
+
+根目录只放入口文件：`README.md`（英文）、`LICENSE`、`CLAUDE.md`（一行，导入本文件）、`config.yml`、`requirements.txt`、`pyproject.toml`（pytest 配置）、`.env.example`。代码在 `techtrend/` 包里，用 `python -m techtrend.<模块>` 运行；中日文 README 和本文件在 `docs/`。`config.py` 以包的上一级（仓库根目录）为 ROOT 查找 `config.yml`、`.env` 和 `data/`。
+
 ## 文件职责
 
 | 文件 | 职责 |
 |------|------|
-| `config.yml` / `config.py` | 所有非密钥设置（报告语言、关注方向、数据源开关、LLM、网站语言）；`config.py` 合并默认值、读本地 `.env`、定义路径 |
-| `fetcher.py` | 抓取已启用的数据源，输出 `raw_intel.json`，维护 `data/seen_urls.json` 去重 |
-| `summarizer.py` | 按启用的数据源动态拼 prompt，调 LLM，输出 `DAILY_REPORT.md` + `data/history/YYYY-MM-DD.md` |
-| `notifiers.py` | 11 个推送渠道（PushPlus、Server酱、企业微信、飞书、钉钉、Telegram、Discord、Slack、邮件、ntfy、Webhook），按平台上限分段、转换 Markdown |
-| `pusher.py` | 推送日报；`--list` 看哪些渠道已配置，`--test` 发测试消息 |
-| `formatter.py` | 可选：翻译成 `website.languages`，生成 Jekyll post 到 `_formatted/`（含 `title_<lang>`、`highlights`、条目行硬换行） |
-| `weekly_report.py` | 读最近 7 天 history，生成周报并推送，保存 `data/history/weekly_*.md` |
+| `config.yml` / `techtrend/config.py` | 所有非密钥设置（报告语言、关注方向、数据源开关、LLM、网站语言）；`config.py` 合并默认值、读本地 `.env`、定义路径 |
+| `techtrend/fetcher.py` | 抓取已启用的数据源，输出 `raw_intel.json`，维护 `data/seen_urls.json` 去重 |
+| `techtrend/summarizer.py` | 按启用的数据源动态拼 prompt，调 LLM，输出 `DAILY_REPORT.md` + `data/history/YYYY-MM-DD.md` |
+| `techtrend/notifiers.py` | 11 个推送渠道（PushPlus、Server酱、企业微信、飞书、钉钉、Telegram、Discord、Slack、邮件、ntfy、Webhook），按平台上限分段、转换 Markdown |
+| `techtrend/pusher.py` | 推送日报；`--list` 看哪些渠道已配置，`--test` 发测试消息 |
+| `techtrend/formatter.py` | 可选：翻译成 `website.languages`，生成 Jekyll post 到 `_formatted/`（含 `title_<lang>`、`highlights`、条目行硬换行） |
+| `techtrend/weekly_report.py` | 读最近 7 天 history，生成周报并推送，保存 `data/history/weekly_*.md` |
 | `scripts/state.sh` | `load` 把 `data` 分支取到 `data/`（不存在就新建），`save` 提交回去 |
 | `tests/` | pytest：渠道请求格式和长度上限、prompt 拼装、配置合并、front matter |
 
@@ -68,6 +72,10 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 
 ## 已知问题与历史决策
 
+### 2026-09-25 日报被截断
+- 现象：停跑 17 天后第一次运行，新条目 101 条，prompt 变长，推理用掉 5357 token，7000 预算只剩 1600 给正文，`finish_reason=length`，报告停在 HuggingFace 一节（3071 字符，平时约 7000）。推送和网站都发了半份。
+- 修复：`_call_api` 在正文为空**或被截断**时，关闭 thinking、用完整 `llm.max_tokens` 重写一次（原来只处理"空"，且回退预算只有 3500，不够一份完整报告的 4–5k token）。重试后仍截断会打 `::warning::`。有测试覆盖三种情况。
+
 ### 2026-09 通用化改造
 - 推送：`pusher.py` 只支持 PushPlus → `notifiers.py` 多渠道，有 Secret 就启用；所有渠道都失败时才让 job 失败。
 - LLM：`thinking` 参数是 DeepSeek 特有的，做成 `llm.thinking: true/false/null`，null 时不发送（适配 OpenAI、Claude、Gemini 等）。周报原来没传 thinking，v4-flash 默认开推理、3000 token 可能全被吃掉，现在明确关掉。
@@ -81,7 +89,7 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 - 根因：`deepseek-v4-flash` 默认开启 thinking 模式（effort=high，且 low/medium 会被服务端静默映射成 high，没法调低），reasoning_content 和最终 content 共用同一个 `max_tokens` 预算。`summarizer.py` 原来设的 `max_tokens=3500` 全被推理吃掉，`message.content` 变成空字符串。API 调用本身是 200 OK，不会报错，只有下游 formatter.py 的空文件检查能发现。
 - 修复思路的取舍：
   - 一开始简单粗暴地关了 thinking（`extra_body={"thinking":{"type":"disabled"}}`），能跑但放弃了推理可能带来的分析质量提升。
-  - 最终版本：`summarizer.py` 保持 thinking **开启**，`max_tokens` 从 3500 提到 `THINKING_MAX_TOKENS=7000` 给推理留够空间；每次调用把 `usage.completion_tokens_details.reasoning_tokens` 记进日志，方便后续根据实际消耗再调这个数字。如果 content 还是空的（说明某天推理格外啰嗦，7000 token 也不够），自动退化成 `FALLBACK_MAX_TOKENS=3500` + thinking 关闭重试一次，两次都空才真正报错。
+  - 最终版本：`summarizer.py` 保持 thinking **开启**，预算 7000（现为 `config.yml` 的 `llm.max_tokens`）；每次调用把 `reasoning_tokens` 记进日志。正文为空或被截断时关闭 thinking 重试一次（见上面 2026-09-25 一节）。
   - `formatter.py` 的翻译调用维持 thinking 关闭：纯翻译任务不需要推理，开启只会多等一倍时间。
 - 同批修的次要问题：`fetcher.py` 的 HF Trending Models 请求 `sort=trending` 已失效（HuggingFace 把字段改名成 `trendingScore`），会连续 400 三次重试失败，当天该来源直接空缺。已改成 `sort=trendingScore&direction=-1`。
 
@@ -123,9 +131,10 @@ export OPENAI_BASE_URL=...
 export OPENAI_MODEL=deepseek-v4-flash
 export PUSHPLUS_TOKEN=...
 
-python fetcher.py
-python summarizer.py
-python pusher.py
+python -m techtrend.fetcher
+python -m techtrend.summarizer
+python -m techtrend.pusher        # --list 查看渠道，--test 发测试消息
+pytest                            # 测试
 ```
 
 ## 手动触发 Workflow

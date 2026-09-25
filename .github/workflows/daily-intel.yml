@@ -51,10 +51,10 @@ jobs:
         run: bash scripts/state.sh load
 
       - name: Fetch
-        run: python fetcher.py
+        run: python -m techtrend.fetcher
 
       - name: Summarize
-        run: python summarizer.py
+        run: python -m techtrend.summarizer
 
       # Saved before pushing: a delivery problem must not make tomorrow re-analyse today's items.
       - name: Save state (data branch)
@@ -86,18 +86,18 @@ jobs:
           NTFY_SERVER:          ${{ secrets.NTFY_SERVER }}
           NTFY_TOKEN:           ${{ secrets.NTFY_TOKEN }}
           WEBHOOK_URL:          ${{ secrets.WEBHOOK_URL }}
-        run: python pusher.py
+        run: python -m techtrend.pusher
 
       - name: Format for website
         if: vars.WEBSITE_REPO != ''
-        run: python formatter.py
+        run: python -m techtrend.formatter
 
       - name: Collect outputs
         id: meta
         run: |
           echo "report_date=$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
           if ls _formatted/*.md >/dev/null 2>&1; then echo "has_post=true" >> "$GITHUB_OUTPUT"; fi
-          echo "posts_dir=$(python -c "from config import CONFIG; print(CONFIG['website']['posts_dir'])")" >> "$GITHUB_OUTPUT"
+          echo "posts_dir=$(python -c "from techtrend.config import CONFIG; print(CONFIG['website']['posts_dir'])")" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifacts
         if: always()

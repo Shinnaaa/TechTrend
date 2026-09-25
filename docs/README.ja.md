@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/English-eaeef2?style=for-the-badge"></a>
+  <a href="../README.md"><img alt="English" src="https://img.shields.io/badge/English-eaeef2?style=for-the-badge"></a>
   <a href="README.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-eaeef2?style=for-the-badge"></a>
   <a href="README.ja.md"><img alt="日本語" src="https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-1f2328?style=for-the-badge"></a>
 </p>
@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/Shinnaaa/TechTrend/actions/workflows/daily-intel.yml"><img alt="Daily Intel" src="https://github.com/Shinnaaa/TechTrend/actions/workflows/daily-intel.yml/badge.svg"></a>
   <img alt="Python 3.11" src="https://img.shields.io/badge/python-3.11-3776ab">
-  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="../LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 ---
@@ -57,7 +57,7 @@
 
 ### 2. LLM の API キーを用意する
 
-OpenAI 互換 API ならどれでも使えます。[`config.yml`](config.yml) の既定は DeepSeek で、安価かつ中国語・英語の文章が得意です。
+OpenAI 互換 API ならどれでも使えます。[`config.yml`](../config.yml) の既定は DeepSeek で、安価かつ中国語・英語の文章が得意です。
 
 | プロバイダ | `llm.base_url` | `llm.model` | `llm.thinking` |
 |---|---|---|---|
@@ -86,7 +86,7 @@ Fork したリポジトリでは Actions が無効になっています。**Acti
 1. **Actions → Test Notifications → Run workflow**：設定した各チャンネルに短いテストメッセージが届き、ログに有効なチャンネルの一覧が表示されます。
 2. **Actions → Daily Tech Intel → Run workflow**：数分で最初のブリーフィングが届きます。
 
-以降は毎日 UTC 00:00 に自動実行されます。時刻を変えるには [`.github/workflows/daily-intel.yml`](.github/workflows/daily-intel.yml) の `cron` を編集してください（UTC 表記です。`0 23 * * *` で東京の 8:00）。
+以降は毎日 UTC 00:00 に自動実行されます。時刻を変えるには [`.github/workflows/daily-intel.yml`](../.github/workflows/daily-intel.yml) の `cron` を編集してください（UTC 表記です。`0 23 * * *` で東京の 8:00）。
 
 ---
 
@@ -114,7 +114,7 @@ Fork したリポジトリでは Actions が無効になっています。**Acti
 
 ## 設定
 
-Secrets 以外の設定はすべて [`config.yml`](config.yml) にあります。例：
+Secrets 以外の設定はすべて [`config.yml`](../config.yml) にあります。例：
 
 **フロントエンドチーム向けの日本語ブリーフィング**
 
@@ -177,19 +177,19 @@ flowchart LR
 
 | ファイル | 役割 |
 |---|---|
-| `config.yml`、`config.py` | 設定・既定値・パス |
-| `fetcher.py` | 有効なソースをリトライ付きで取得し、過去に見た URL を除外 |
-| `summarizer.py` | 新規項目と直近 7 日分の見出しからプロンプトを組み立ててモデルを呼ぶ |
-| `notifiers.py`、`pusher.py` | 配信チャンネル。`pusher.py --list` / `--test` で設定を確認 |
-| `formatter.py` | 任意の Web 記事：翻訳・言語ブロック・front matter |
-| `weekly_report.py` | 日曜に一週間分をまとめる |
+| `config.yml`、`techtrend/config.py` | 設定・既定値・パス |
+| `techtrend/fetcher.py` | 有効なソースをリトライ付きで取得し、過去に見た URL を除外 |
+| `techtrend/summarizer.py` | 新規項目と直近 7 日分の見出しからプロンプトを組み立ててモデルを呼ぶ |
+| `techtrend/notifiers.py`、`techtrend/pusher.py` | 配信チャンネル。`python -m techtrend.pusher --list` / `--test` で設定を確認 |
+| `techtrend/formatter.py` | 任意の Web 記事：翻訳・言語ブロック・front matter |
+| `techtrend/weekly_report.py` | 日曜に一週間分をまとめる |
 | `scripts/state.sh` | `data` ブランチ上の実行データを読み書き |
 
 **実行データは `data` ブランチに保存されます**（`history/` に各ブリーフィング、`seen_urls.json` に重複排除用の記録）。ワークフローは実行のたびにこれを `data/` に取り出し、終了後にコミットし直します。そのため `main` にはコードだけが残り、ボットの毎日のコミットで埋まることはありません。ブランチは初回実行時に自動で作られます。
 
 ### 設計メモ
 
-- **推論トークンの予算。** DeepSeek の推論をオンにすると、推論と本文が 1 つの `max_tokens` を共有します。毎回推論トークン数をログに残し、本文が空なら推論をオフにして一度だけ再試行します。
+- **推論トークンの予算。** DeepSeek の推論をオンにすると、推論と本文が 1 つの `max_tokens` を共有します。毎回推論トークン数をログに残し、本文が空だった場合や上限で途中で切れた場合（新規項目が多い日に起こります）は、推論をオフにして予算をすべて本文に使い、一度だけ書き直します。
 - **配信の前にデータを保存。** 配信チャンネルに問題があっても、翌日に同じ項目を再分析することはありません。
 - **1 つのチャンネルが失敗しても他は止まりません。** 配信ステップが失敗扱いになるのは、どのチャンネルにも届かなかった場合だけです。
 
@@ -200,10 +200,10 @@ flowchart LR
 ```bash
 pip install -r requirements.txt
 cp .env.example .env        # OPENAI_API_KEY と配信チャンネルを記入
-python pusher.py --list     # 設定済みのチャンネルを確認
-python pusher.py --test     # テストメッセージを送信
+python -m techtrend.pusher --list     # 設定済みのチャンネルを確認
+python -m techtrend.pusher --test     # テストメッセージを送信
 
-python fetcher.py && python summarizer.py && python pusher.py
+python -m techtrend.fetcher && python -m techtrend.summarizer && python -m techtrend.pusher
 ```
 
 ローカルでは実行データを `./data/`（git 管理外）に保存します。テスト：`pip install pytest && pytest`。
@@ -219,13 +219,13 @@ Actions タブで失敗した実行を開くか、`gh run view <run-id> --log-fa
 | モデル API が `401` を返す | `OPENAI_API_KEY` の誤り、または `llm.base_url` と別のプロバイダのキー |
 | `402 Insufficient Balance` | API アカウントの残高不足 |
 | `No push channel configured` の警告 | 必須 Secrets が揃ったチャンネルがない。上の表を参照 |
-| `Model returned an empty report` | 推論が予算を使い切った：`llm.max_tokens` を増やす |
+| `Model returned an empty report`、または「hit the token limit」の警告 | 再試行後も予算が足りない：`llm.max_tokens` を増やす |
 | 実行は成功したが何も届かず、ログに `skipping` | その日の新規項目が `min_new_items` 未満（仕様通り） |
 
 ## コントリビュート
 
-配信チャンネルの追加は、[`notifiers.py`](notifiers.py) に関数 1 つと `Channel(...)` を 1 行、`tests/` にテストを足すだけです。ソースの追加は、`fetcher.py` に取得関数、設定に項目、`summarizer.py` にセクションの書き方を加えます。Issue や Pull Request を歓迎します。
+配信チャンネルの追加は、[`notifiers.py`](../techtrend/notifiers.py) に関数 1 つと `Channel(...)` を 1 行、`tests/` にテストを足すだけです。ソースの追加は、`techtrend/fetcher.py` に取得関数、設定に項目、`techtrend/summarizer.py` にセクションの書き方を加えます。Issue や Pull Request を歓迎します。
 
 ## ライセンス
 
-[MIT](LICENSE)
+[MIT](../LICENSE)

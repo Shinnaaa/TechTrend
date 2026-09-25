@@ -18,7 +18,7 @@ from typing import Optional
 import httpx
 from bs4 import BeautifulSoup
 
-from config import CONFIG, RAW_INTEL_PATH, SEEN_URLS_PATH
+from .config import CONFIG, RAW_INTEL_PATH, SEEN_URLS_PATH
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)

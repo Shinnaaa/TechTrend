@@ -9,3 +9,4 @@ DAILY_REPORT.md
 _formatted/
 # Run state (history, dedup store) lives on the `data` branch; CI checks it out here
 data/
+.pytest_cache/

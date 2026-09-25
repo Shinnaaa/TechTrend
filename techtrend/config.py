@@ -15,7 +15,8 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent
+# Repository root: config.yml, .env and data/ live here, next to the package.
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_dotenv(path: Path) -> None:

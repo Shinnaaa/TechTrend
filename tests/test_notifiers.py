@@ -5,8 +5,8 @@ import re
 import httpx
 import pytest
 
-import notifiers
-from notifiers import CHANNELS, active_channels, chunk, send_all, to_slack_mrkdwn, to_telegram_html, utf8_len
+from techtrend import notifiers
+from techtrend.notifiers import CHANNELS, active_channels, chunk, send_all, to_slack_mrkdwn, to_telegram_html, utf8_len
 
 REPORT = "\n\n".join(
     f"## Section {s}\n\n" + "\n".join(

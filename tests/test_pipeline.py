@@ -2,9 +2,7 @@ from datetime import date
 
 import yaml
 
-import config
-import formatter
-import summarizer
+from techtrend import config, formatter, summarizer
 
 BLOCKS = {key: f"<{key} data>" for key in summarizer.SECTION_ORDER}
 
@@ -74,3 +72,45 @@ def test_hard_wrap_keeps_entry_lines_apart():
     out = formatter._hard_wrap(body)
     assert "**[a](u)** `py`  \n💡 one  \n🎯 two\n" in out
     assert "- item\n- item" in out
+
+
+class _FakeCompletions:
+    """Returns queued (content, finish_reason) answers and records each call's kwargs."""
+
+    def __init__(self, answers):
+        self.answers, self.calls = list(answers), []
+
+    def create(self, **kwargs):
+        from types import SimpleNamespace as NS
+        self.calls.append(kwargs)
+        content, finish = self.answers.pop(0)
+        usage = NS(completion_tokens=1, completion_tokens_details=NS(reasoning_tokens=1))
+        return NS(choices=[NS(message=NS(content=content), finish_reason=finish)], usage=usage,
+                  model_dump_json=lambda: "{}")
+
+
+def _client(answers):
+    from types import SimpleNamespace as NS
+    completions = _FakeCompletions(answers)
+    return NS(chat=NS(completions=completions)), completions
+
+
+def test_complete_report_needs_one_call():
+    client, calls = _client([("# report", "stop")])
+    assert summarizer._call_api(client, "p") == "# report"
+    assert len(calls.calls) == 1 and calls.calls[0]["extra_body"]["thinking"]["type"] == "enabled"
+
+
+def test_truncated_report_is_rewritten_without_thinking():
+    client, calls = _client([("# half a rep", "length"), ("# full report", "stop")])
+    assert summarizer._call_api(client, "p") == "# full report"
+    retry = calls.calls[1]
+    assert retry["extra_body"]["thinking"]["type"] == "disabled"
+    assert retry["max_tokens"] == config.CONFIG["llm"]["max_tokens"]
+
+
+def test_empty_report_is_retried_and_kept_if_retry_fails():
+    client, _ = _client([("", "length"), ("# report", "stop")])
+    assert summarizer._call_api(client, "p") == "# report"
+    client, _ = _client([("# partial", "length"), ("", "stop")])
+    assert summarizer._call_api(client, "p") == "# partial"

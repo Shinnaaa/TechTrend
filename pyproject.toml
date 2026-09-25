@@ -1,0 +1,11 @@
+[project]
+name = "techtrend"
+version = "1.0.0"
+description = "A daily tech-intelligence briefing: GitHub, Hugging Face, Hacker News, Reddit and Product Hunt, analysed by an LLM and delivered to 11 push channels."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

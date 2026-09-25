@@ -27,7 +27,7 @@ from typing import Callable
 import httpx
 import markdown as md_lib
 
-from config import CONFIG
+from .config import CONFIG
 
 log = logging.getLogger(__name__)
 TIMEOUT = 20.0

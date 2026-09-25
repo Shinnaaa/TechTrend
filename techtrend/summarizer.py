@@ -11,7 +11,7 @@ import json
 import logging
 from datetime import date, timedelta
 
-from config import CONFIG, HISTORY_DIR, LANGUAGES, RAW_INTEL_PATH, REPORT_PATH, lang_text, llm_client, thinking_body
+from .config import CONFIG, HISTORY_DIR, LANGUAGES, RAW_INTEL_PATH, REPORT_PATH, lang_text, llm_client, thinking_body
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -270,12 +270,11 @@ def _format_ph(items: list[dict]) -> str:
 
 
 # With DeepSeek-style thinking on, reasoning_tokens and the report share one
-# max_tokens budget (effort can't be dialed below "high"), so llm.max_tokens must
-# cover a full reasoning pass plus the ~3000-token report. If the answer still
-# comes back empty, retry once without thinking on a smaller budget.
-FALLBACK_MAX_TOKENS = 3500
-
-
+# max_tokens budget (effort can't be dialed below "high"). A full report needs
+# ~4-5k tokens; on busy days (many new items, a long prompt) reasoning can take
+# most of llm.max_tokens and the report comes back empty or cut off mid-section
+# (finish_reason="length", seen on 2026-09-25). Either way we retry once without
+# thinking, so the whole budget goes to the report.
 def _create_completion(client, prompt: str, *, thinking: bool | None, max_tokens: int):
     """thinking=None: leave the provider's default (no thinking parameter sent)."""
     kwargs = dict(
@@ -293,7 +292,8 @@ def _create_completion(client, prompt: str, *, thinking: bool | None, max_tokens
     return client.chat.completions.create(**kwargs)
 
 
-def _log_usage(label: str, response) -> str:
+def _log_usage(label: str, response) -> tuple[str, bool]:
+    """Returns (content, truncated)."""
     content = response.choices[0].message.content or ""
     usage = response.usage
     reasoning_tokens = None
@@ -305,35 +305,38 @@ def _log_usage(label: str, response) -> str:
         getattr(usage, "completion_tokens", "?"), reasoning_tokens,
         response.choices[0].finish_reason,
     )
-    return content
+    return content, response.choices[0].finish_reason == "length"
 
 
 def _call_api(client, prompt: str) -> str:
     thinking = CONFIG["llm"]["thinking"]   # True / False / None (not sent)
+    budget = CONFIG["llm"]["max_tokens"]
     log.info("Calling API model=%s (thinking=%s) ...", MODEL, thinking)
     try:
-        response = _create_completion(client, prompt, thinking=thinking, max_tokens=CONFIG["llm"]["max_tokens"])
+        response = _create_completion(client, prompt, thinking=thinking, max_tokens=budget)
     except Exception as exc:
         log.error("API call failed (model=%s): %s", MODEL, exc)
         raise
-    content = _log_usage("Response", response)
+    content, truncated = _log_usage("Response", response)
 
-    if not content.strip() and thinking is not False:
-        log.warning(
-            "Empty content — reasoning likely consumed the %d-token budget. "
-            "Retrying %s.", CONFIG["llm"]["max_tokens"],
-            "with thinking disabled" if thinking else "once",
-        )
-        retry_thinking = False if thinking else None
+    if (not content.strip() or truncated) and thinking is not False:
+        problem = "was cut off at the token limit" if content.strip() else "came back empty"
+        log.warning("The report %s (budget %d) — retrying once %s.", problem, budget,
+                    "with thinking disabled" if thinking else "as is")
         try:
-            response = _create_completion(client, prompt, thinking=retry_thinking, max_tokens=FALLBACK_MAX_TOKENS)
+            response = _create_completion(client, prompt, thinking=False if thinking else None, max_tokens=budget)
         except Exception as exc:
             log.error("Retry API call failed (model=%s): %s", MODEL, exc)
             raise
-        content = _log_usage("Retry response", response)
-        if not content.strip():
-            log.error("Retry also returned empty content. Full response: %s", response.model_dump_json())
+        retry_content, retry_truncated = _log_usage("Retry response", response)
+        if retry_content.strip():
+            content, truncated = retry_content, retry_truncated
+        else:
+            log.error("Retry returned empty content. Full response: %s", response.model_dump_json())
 
+    if truncated:
+        log.warning("The report is still cut off at %d tokens; consider raising llm.max_tokens.", budget)
+        print(f"::warning::Today's report hit the {budget}-token limit and may be incomplete.")
     return content
 
 

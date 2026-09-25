@@ -1,7 +1,7 @@
 <p align="center">
   <a href="README.md"><img alt="English" src="https://img.shields.io/badge/English-1f2328?style=for-the-badge"></a>
-  <a href="README.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-eaeef2?style=for-the-badge"></a>
-  <a href="README.ja.md"><img alt="日本語" src="https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-eaeef2?style=for-the-badge"></a>
+  <a href="docs/README.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-eaeef2?style=for-the-badge"></a>
+  <a href="docs/README.ja.md"><img alt="日本語" src="https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-eaeef2?style=for-the-badge"></a>
 </p>
 
 <h1 align="center">TechTrend</h1>
@@ -177,19 +177,19 @@ flowchart LR
 
 | File | Role |
 |---|---|
-| `config.yml`, `config.py` | Settings, defaults, paths |
-| `fetcher.py` | Pulls the enabled sources with retries; drops URLs seen on earlier days |
-| `summarizer.py` | Builds the prompt from new items plus 7 days of headlines, calls the model |
-| `notifiers.py`, `pusher.py` | Delivery channels; `pusher.py --list` / `--test` for checking your setup |
-| `formatter.py` | Optional website post: translation, language blocks, front matter |
-| `weekly_report.py` | Sunday summary of the week's briefings |
+| `config.yml`, `techtrend/config.py` | Settings, defaults, paths |
+| `techtrend/fetcher.py` | Pulls the enabled sources with retries; drops URLs seen on earlier days |
+| `techtrend/summarizer.py` | Builds the prompt from new items plus 7 days of headlines, calls the model |
+| `techtrend/notifiers.py`, `techtrend/pusher.py` | Delivery channels; `python -m techtrend.pusher --list` / `--test` for checking your setup |
+| `techtrend/formatter.py` | Optional website post: translation, language blocks, front matter |
+| `techtrend/weekly_report.py` | Sunday summary of the week's briefings |
 | `scripts/state.sh` | Loads and saves run state on the `data` branch |
 
 **State lives on the `data` branch** (`history/` with every briefing, and `seen_urls.json` for deduplication). The workflows check it out into `data/` and commit back after each run, so `main` holds only code and never collects bot commits. The branch is created on the first run.
 
 ### Design notes
 
-- **Reasoning budget.** With DeepSeek thinking on, reasoning and the answer share one `max_tokens` budget. The call logs the reasoning-token count; if the answer comes back empty it retries once without thinking.
+- **Reasoning budget.** With DeepSeek thinking on, reasoning and the answer share one `max_tokens` budget. The call logs the reasoning-token count; if the report comes back empty or cut off at the limit (busy days with many new items), it is rewritten once with thinking off so the whole budget goes to the text.
 - **State is saved before delivery**, so a broken push channel never makes the next day analyse the same items again.
 - **One broken channel doesn't stop the others.** The push step only fails when no channel got through.
 
@@ -200,10 +200,10 @@ flowchart LR
 ```bash
 pip install -r requirements.txt
 cp .env.example .env        # then fill in OPENAI_API_KEY and a channel
-python pusher.py --list     # which channels are configured
-python pusher.py --test     # send a test message
+python -m techtrend.pusher --list     # which channels are configured
+python -m techtrend.pusher --test     # send a test message
 
-python fetcher.py && python summarizer.py && python pusher.py
+python -m techtrend.fetcher && python -m techtrend.summarizer && python -m techtrend.pusher
 ```
 
 Locally, state is kept in `./data/` (git-ignored). Tests: `pip install pytest && pytest`.
@@ -219,12 +219,12 @@ Open the failed run in the Actions tab, or run `gh run view <run-id> --log-faile
 | `401` from the model API | Wrong `OPENAI_API_KEY`, or the key doesn't match `llm.base_url` |
 | `402 Insufficient Balance` | The API account is out of credit |
 | `No push channel configured` warning | No channel has all its required secrets; see the table above |
-| `Model returned an empty report` | Reasoning used the whole budget: raise `llm.max_tokens` |
+| `Model returned an empty report`, or a "hit the token limit" warning | Reasoning used most of the budget even after the retry: raise `llm.max_tokens` |
 | Nothing arrived, run is green, log says `skipping` | Fewer than `min_new_items` new items that day, by design |
 
 ## Contributing
 
-Adding a push channel is one function plus one `Channel(...)` entry in [`notifiers.py`](notifiers.py), and a test in `tests/`. Adding a source is a fetch function in `fetcher.py`, a config entry, and a section guide in `summarizer.py`. Issues and pull requests are welcome.
+Adding a push channel is one function plus one `Channel(...)` entry in [`notifiers.py`](techtrend/notifiers.py), and a test in `tests/`. Adding a source is a fetch function in `techtrend/fetcher.py`, a config entry, and a section guide in `techtrend/summarizer.py`. Issues and pull requests are welcome.
 
 ## License
 

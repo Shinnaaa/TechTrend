@@ -13,8 +13,8 @@ import logging
 import sys
 from datetime import date
 
-from config import CONFIG, REPORT_PATH, lang_text
-from notifiers import CHANNELS, active_channels, send_all
+from .config import CONFIG, REPORT_PATH, lang_text
+from .notifiers import CHANNELS, active_channels, send_all
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)

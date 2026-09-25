@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/English-eaeef2?style=for-the-badge"></a>
+  <a href="../README.md"><img alt="English" src="https://img.shields.io/badge/English-eaeef2?style=for-the-badge"></a>
   <a href="README.zh-CN.md"><img alt="简体中文" src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-1f2328?style=for-the-badge"></a>
   <a href="README.ja.md"><img alt="日本語" src="https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-eaeef2?style=for-the-badge"></a>
 </p>
@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/Shinnaaa/TechTrend/actions/workflows/daily-intel.yml"><img alt="Daily Intel" src="https://github.com/Shinnaaa/TechTrend/actions/workflows/daily-intel.yml/badge.svg"></a>
   <img alt="Python 3.11" src="https://img.shields.io/badge/python-3.11-3776ab">
-  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="../LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 ---
@@ -57,7 +57,7 @@
 
 ### 2. 准备大模型 API Key
 
-任何 OpenAI 兼容接口都可以。[`config.yml`](config.yml) 默认用 DeepSeek，价格低，中英文写作都不错：
+任何 OpenAI 兼容接口都可以。[`config.yml`](../config.yml) 默认用 DeepSeek，价格低，中英文写作都不错：
 
 | 服务商 | `llm.base_url` | `llm.model` | `llm.thinking` |
 |---|---|---|---|
@@ -86,7 +86,7 @@ Fork 出来的仓库默认禁用 Actions。打开 **Actions** 标签页，点 **
 1. **Actions → Test Notifications → Run workflow**：每个已配置的渠道都会收到一条测试消息，日志里会列出哪些渠道已生效。
 2. **Actions → Daily Tech Intel → Run workflow**：几分钟后收到第一份简报。
 
-之后每天 UTC 00:00（北京时间 08:00）自动运行。想改时间，编辑 [`.github/workflows/daily-intel.yml`](.github/workflows/daily-intel.yml) 里的 `cron`（用的是 UTC：`0 23 * * *` 是东京 08:00，`0 1 * * *` 是北京 09:00）。
+之后每天 UTC 00:00（北京时间 08:00）自动运行。想改时间，编辑 [`.github/workflows/daily-intel.yml`](../.github/workflows/daily-intel.yml) 里的 `cron`（用的是 UTC：`0 23 * * *` 是东京 08:00，`0 1 * * *` 是北京 09:00）。
 
 ---
 
@@ -114,7 +114,7 @@ Fork 出来的仓库默认禁用 Actions。打开 **Actions** 标签页，点 **
 
 ## 配置
 
-所有非密钥设置都在 [`config.yml`](config.yml)。几个例子：
+所有非密钥设置都在 [`config.yml`](../config.yml)。几个例子：
 
 **给前端团队的英文简报**
 
@@ -177,19 +177,19 @@ flowchart LR
 
 | 文件 | 职责 |
 |---|---|
-| `config.yml`、`config.py` | 配置、默认值、路径 |
-| `fetcher.py` | 带重试地抓取已启用的来源，过滤掉之前出现过的 URL |
-| `summarizer.py` | 用新条目加最近 7 天的标题拼成 prompt，调用模型 |
-| `notifiers.py`、`pusher.py` | 推送渠道；`pusher.py --list` / `--test` 用于检查配置 |
-| `formatter.py` | 可选的网站文章：翻译、语言块、front matter |
-| `weekly_report.py` | 周日汇总本周简报 |
+| `config.yml`、`techtrend/config.py` | 配置、默认值、路径 |
+| `techtrend/fetcher.py` | 带重试地抓取已启用的来源，过滤掉之前出现过的 URL |
+| `techtrend/summarizer.py` | 用新条目加最近 7 天的标题拼成 prompt，调用模型 |
+| `techtrend/notifiers.py`、`techtrend/pusher.py` | 推送渠道；`python -m techtrend.pusher --list` / `--test` 用于检查配置 |
+| `techtrend/formatter.py` | 可选的网站文章：翻译、语言块、front matter |
+| `techtrend/weekly_report.py` | 周日汇总本周简报 |
 | `scripts/state.sh` | 在 `data` 分支上读写运行数据 |
 
 **运行数据存放在 `data` 分支**（`history/` 里是每一份简报，`seen_urls.json` 用于去重）。workflow 每次运行时把它取到 `data/` 目录，结束后提交回去。所以 `main` 分支只放代码，不会被机器人的每日提交刷屏。这个分支在第一次运行时自动创建。
 
 ### 设计要点
 
-- **推理预算。** 开启 DeepSeek 推理时，推理和正文共用一个 `max_tokens` 预算。每次调用都会记录推理 token 数；如果正文为空，会关闭推理重试一次。
+- **推理预算。** 开启 DeepSeek 推理时，推理和正文共用一个 `max_tokens` 预算。每次调用都会记录推理 token 数；如果正文为空，或者在预算上限处被截断（新条目特别多的日子会出现），会关闭推理重写一次，让全部预算都用在正文上。
 - **先保存数据，再推送。** 推送渠道出问题也不会导致第二天重复分析同样的条目。
 - **单个渠道失败不影响其他渠道。** 只有所有渠道都失败时，推送步骤才会报错。
 
@@ -200,10 +200,10 @@ flowchart LR
 ```bash
 pip install -r requirements.txt
 cp .env.example .env        # 填入 OPENAI_API_KEY 和至少一个渠道
-python pusher.py --list     # 查看哪些渠道已配置
-python pusher.py --test     # 发送测试消息
+python -m techtrend.pusher --list     # 查看哪些渠道已配置
+python -m techtrend.pusher --test     # 发送测试消息
 
-python fetcher.py && python summarizer.py && python pusher.py
+python -m techtrend.fetcher && python -m techtrend.summarizer && python -m techtrend.pusher
 ```
 
 本地运行时数据保存在 `./data/`（已被 git 忽略）。运行测试：`pip install pytest && pytest`。
@@ -219,13 +219,13 @@ python fetcher.py && python summarizer.py && python pusher.py
 | 模型 API 返回 `401` | `OPENAI_API_KEY` 不对，或者和 `llm.base_url` 不是同一家 |
 | `402 Insufficient Balance` | API 账户余额不足 |
 | 警告 `No push channel configured` | 没有任何渠道的必填 Secrets 配齐，见上面的渠道表 |
-| `Model returned an empty report` | 推理用完了全部预算：调大 `llm.max_tokens` |
+| `Model returned an empty report`，或"hit the token limit"警告 | 重试后预算仍然不够：调大 `llm.max_tokens` |
 | 运行成功但没收到，日志里有 `skipping` | 当天新条目少于 `min_new_items`，这是设计行为 |
 
 ## 参与贡献
 
-新增一个推送渠道，只需要在 [`notifiers.py`](notifiers.py) 里加一个函数和一条 `Channel(...)`，再在 `tests/` 里补一个测试。新增一个数据源，需要在 `fetcher.py` 里加抓取函数，在配置里加一项，并在 `summarizer.py` 里加对应章节的写法说明。欢迎提 Issue 和 PR。
+新增一个推送渠道，只需要在 [`notifiers.py`](../techtrend/notifiers.py) 里加一个函数和一条 `Channel(...)`，再在 `tests/` 里补一个测试。新增一个数据源，需要在 `techtrend/fetcher.py` 里加抓取函数，在配置里加一项，并在 `techtrend/summarizer.py` 里加对应章节的写法说明。欢迎提 Issue 和 PR。
 
 ## 许可证
 
-[MIT](LICENSE)
+[MIT](../LICENSE)

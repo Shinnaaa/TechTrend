@@ -7,7 +7,7 @@
 <h1 align="center">TechTrend</h1>
 
 <p align="center">
-  毎朝 GitHub・Hugging Face・Hacker News・Reddit・Product Hunt を読み込み、<br>
+  毎朝 GitHub・Hugging Face・Hacker News・Reddit・Product Hunt・テックニュースを読み込み、<br>
   好きな LLM で切り口のある技術分析を書き、Slack・Telegram・メール・WeChat などに届けます。<br>
   GitHub Actions 上で無料で動き、サーバーは不要です。
 </p>
@@ -36,7 +36,7 @@
 | 📌 今日の主要ニュース | 3〜5 件、重要度順。同じ日に複数のソースに現れた話題を最優先 |
 | ⚡ シグナル | 1〜2 件、直近 7 日間をトレンド文脈として |
 | 🛠️ 今週のアクション | すぐ着手できる PoC・技術評価を 1〜2 件 |
-| 📂 ソース別一覧 | 1 項目 1 行：GitHub Trending、Hugging Face のモデルと論文、Hacker News、Reddit、Product Hunt |
+| 📂 ソース別一覧 | 1 項目 1 行：テックニュース（TechCrunch、The Verge、Ars Technica、The Decoder）、GitHub Trending、Hugging Face のモデルと論文、Hacker News、Reddit、Product Hunt |
 
 プッシュ通知のタイトルは最初の主要ニュースなので、開かなくてもその日の出来事が分かります。ソースはそれぞれ個別にオフにできます。以前に分析した項目は自動で除外され、新規項目が 5 件未満の日は何も送りません。**毎週日曜**には、一週間の強いシグナルとトレンドをまとめた週報も届きます。
 
@@ -129,6 +129,16 @@ sources:
     subreddits: [LocalLLaMA, MachineLearning, programming]
   product_hunt:
     enabled: false
+```
+
+**ニュースサイトを変更**（RSS / Atom ならどれでも可。書いた一覧が既定の一覧を置き換えます）
+
+```yaml
+sources:
+  news:
+    feeds:
+      - {name: TechCrunch, url: "https://techcrunch.com/feed/"}
+      - {name: ITmedia, url: "https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml"}
 ```
 
 | キー | 既定値 | 意味 |

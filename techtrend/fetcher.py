@@ -2,7 +2,7 @@
 fetcher.py — Data Collection Engine
 Sources (each switchable in config.yml): GitHub Trending, Hugging Face daily
 papers and trending models, Hacker News (Algolia API), Reddit (RSS),
-Product Hunt (RSS).
+Product Hunt (RSS), tech news sites (any RSS/Atom feed).
 Outputs: raw_intel.json (items marked is_new),
          data/seen_urls.json (persistent dedup store)
 """
@@ -12,7 +12,8 @@ import re
 import time
 import logging
 import xml.etree.ElementTree as ET
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Optional
 
 import httpx
@@ -319,6 +320,82 @@ def fetch_product_hunt() -> list[dict]:
     return items
 
 
+def _parse_date(text: str) -> Optional[datetime]:
+    """RSS pubDate (RFC 822) or Atom published/updated (ISO 8601)."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = parsedate_to_datetime(text) if not text[:4].isdigit() else datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def parse_feed(xml_text: str, site: str) -> list[dict]:
+    """Articles from an RSS 2.0 or Atom feed, newest first."""
+    root = ET.fromstring(xml_text)
+    atom = "{http://www.w3.org/2005/Atom}"
+    items = []
+    for entry in root.iter("item"):                       # RSS 2.0
+        items.append({
+            "title":     entry.findtext("title", ""),
+            "url":       (entry.findtext("link", "") or "").strip(),
+            "summary":   entry.findtext("description", ""),
+            "published": _parse_date(entry.findtext("pubDate", "")),
+        })
+    for entry in root.iter(f"{atom}entry"):               # Atom
+        link = entry.find(f"{atom}link[@rel='alternate']")
+        if link is None:
+            link = entry.find(f"{atom}link")
+        items.append({
+            "title":     entry.findtext(f"{atom}title", ""),
+            "url":       link.attrib.get("href", "") if link is not None else "",
+            "summary":   entry.findtext(f"{atom}summary", "") or entry.findtext(f"{atom}content", ""),
+            "published": _parse_date(entry.findtext(f"{atom}published", "") or entry.findtext(f"{atom}updated", "")),
+        })
+
+    articles = []
+    for item in items:
+        title = _strip_html(item["title"])
+        if not title or not item["url"]:
+            continue
+        summary = _strip_html(item["summary"])
+        articles.append({
+            "source":      "news",
+            "site":        site,
+            "title":       title,
+            "description": summary[:297] + "..." if len(summary) > 300 else summary,
+            "published":   item["published"],
+            "url":         item["url"],
+        })
+    articles.sort(key=lambda a: a["published"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    return articles
+
+
+def fetch_news(feeds: list[dict], max_age_hours: float) -> list[dict]:
+    """Recent articles from tech news feeds; a feed that fails is skipped."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    items = []
+    with httpx.Client(headers=HEADERS, follow_redirects=True) as client:
+        for feed in feeds:
+            resp = _fetch_with_retry(client, feed["url"])
+            if resp is None:
+                continue
+            try:
+                articles = parse_feed(resp.text, feed["name"])
+            except ET.ParseError as exc:
+                log.error("Failed to parse feed %s: %s", feed["name"], exc)
+                continue
+            # Articles without a date are kept; seen_urls stops them repeating.
+            recent = [a for a in articles if a["published"] is None or a["published"] >= cutoff]
+            log.info("News %s: %d articles, %d within %sh", feed["name"], len(articles), len(recent), max_age_hours)
+            for article in recent:
+                article["published"] = article["published"].isoformat() if article["published"] else ""
+            items.extend(recent)
+    return items
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def run() -> None:
@@ -355,6 +432,10 @@ def run() -> None:
     if sources["product_hunt"]["enabled"]:
         log.info("Fetching Product Hunt")
         all_items.extend(fetch_product_hunt())
+
+    if sources["news"]["enabled"]:
+        log.info("Fetching news feeds")
+        all_items.extend(fetch_news(sources["news"]["feeds"], sources["news"]["max_age_hours"]))
 
     # Deduplicate within this batch, mark is_new
     batch_seen: set[str] = set()

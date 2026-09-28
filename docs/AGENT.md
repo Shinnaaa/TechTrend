@@ -53,6 +53,7 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 | Hacker News | Algolia API | 技术热点讨论 |
 | Reddit r/LocalLLaMA | Atom RSS（无需 key） | 本地 LLM 社区热帖 |
 | Product Hunt | Atom RSS | 新产品 |
+| 科技媒体 | RSS/Atom，`sources.news.feeds` 可配，默认 TechCrunch、The Verge、Ars Technica、The Decoder；只取 `max_age_hours`（36h）内的文章，按时间取最新 `max_items`（25）篇 | 发布、融资、监管、事故等不上 GitHub/HF 榜单的新闻 |
 
 ---
 
@@ -81,6 +82,7 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
   - 报告结构改为 📌 今日要闻（3–5 条，按重要性排）→ ⚡ 趋势信号（1–2）→ 🛠️ 本周行动（1–2）→ 📂 分源速览（每条一行，每源限 2–5 条，要闻里写过的不再重复）。去掉了每条目的 🎯 行动行，篇幅约减半。
   - `ranker.py` 在调 LLM 前找跨来源话题，作为"今日热点候选"交给模型；要闻的选择优先级：跨来源话题 > 单源异常高热 > 改变工程决策的发布。词匹配有误报（"hand"、"linear" 这类），交给模型判断，停用词表只挡最常见的。试过用历史报告的文档频率过滤通用词，不行：Qwen3.8 这种长期热点和通用词一样高频。
   - 热点统计用**全部**抓到的条目（包括 seen），这样已经报道过但还在各榜单上的话题也算热度；只有全部是旧条目时，要求模型写成"持续：…"。
+  - 同日加了科技媒体 RSS（`fetch_news`/`parse_feed`，通用 RSS 2.0 + Atom）。新闻标题是普通英文句子，只靠停用词表会让 battery、billion 这类词挤满候选，所以 ranker 改为只收"写得像名字"的词：带数字、词中有大写（MiMo、GPT），或在普通句式标题中间大写；论文标题每个词都大写，不算。所有新闻源在 ranker 里算同一个来源，避免四家媒体都提 Apple 就算"四源热点"。VentureBeat 的 feed 返回 429，没加。
   - 推送标题 = 第一条要闻（微信通知里直接看到）；周报、趋势背景、网站 highlights 都改用 `report.digest()` / `report.headlines()` 取要闻和信号，旧格式报告回退到 ⚡ 一节。
 
 ### 2026-09-25 日报被截断

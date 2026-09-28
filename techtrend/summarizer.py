@@ -74,7 +74,7 @@ PROMPT_HEADER = """\
 3-5 条，按重要性从高到低排。选条目的依据，按优先级：
 1. "今日热点候选"中确实是同一件事、且出现在 2 个以上来源的话题——几个社区同时在讨论，是最强的热度信号。候选是程序按词匹配出来的，会有误报（同一个词、不相关的两件事），自己判断
 2. 单源异常高热：HN 👍、GitHub 单日星数、HF ❤️ 明显高于同来源其他条目
-3. 会改变工程决策的发布：新模型、重大版本、安全事件、许可证或价格变化
+3. 会改变工程决策的发布或事件：新模型、重大版本、安全事件、许可证或价格变化、大额收购融资、监管政策（多见于"科技媒体"）
 热点候选里的条目如果全部标了【前几天已报道】，只在今天有新条目佐证时才入选，标题以"持续："开头。
 格式（标题不放链接）：
 **1. [一句话标题：谁发布了什么/发生了什么，带一个关键数字]**
@@ -106,10 +106,12 @@ SECTION_GUIDES = {
 最多 3 条，跳过纯提问和已被其他来源覆盖的：- **[标题](链接)**：[帖子给出的具体测试结果或发现]"""),
     "product_hunt": ("🚀 Product Hunt", """\
 最多 2 条，同质化的不写：- **[产品名](链接)**：替代 [现有方案]，[差异化的技术点]"""),
+    "news": ("📰 科技媒体", """\
+最多 4 条，跳过消费电子评测、促销导购、人物八卦：- **[标题](链接)** `媒体名`：[发生了什么（带数字：金额、用户数、日期），对工程师或技术选型的影响]"""),
 }
 
 # Order of sections in the report, and the raw-data label for each
-SECTION_ORDER = ["github_trending", "huggingface_models", "huggingface_papers", "hacker_news", "reddit", "product_hunt"]
+SECTION_ORDER = ["news", "github_trending", "huggingface_models", "huggingface_papers", "hacker_news", "reddit", "product_hunt"]
 DATA_LABELS = {
     "github_trending":    "GitHub Trending（新项目）",
     "huggingface_models": "HuggingFace 热门模型（今日 trending）",
@@ -117,6 +119,7 @@ DATA_LABELS = {
     "hacker_news":        "Hacker News Top（新条目）",
     "reddit":             "Reddit {subreddits} 今日热帖",
     "product_hunt":       "Product Hunt（新产品）",
+    "news":               "科技媒体（新文章，新的在前）",
 }
 
 LANGUAGE_DIRECTIVE = """
@@ -266,6 +269,14 @@ def _format_ph(items: list[dict]) -> str:
     return "\n".join(lines) or "（今日无新产品）"
 
 
+def _format_news(items: list[dict]) -> str:
+    items = sorted(items, key=lambda i: i.get("published", ""), reverse=True)
+    lines = []
+    for item in items[:SOURCES['news']['max_items']]:
+        lines.append(f"- [{item['title']}]({item['url']}) `{item.get('site', '')}`: {item.get('description', '')}")
+    return "\n".join(lines) or "（今日无新文章）"
+
+
 # With DeepSeek-style thinking on, reasoning_tokens and the report share one
 # max_tokens budget (effort can't be dialed below "high"). A full report needs
 # ~4-5k tokens; on busy days (many new items, a long prompt) reasoning can take
@@ -366,6 +377,7 @@ def run() -> None:
         "hacker_news":        _format_hn(of("hacker_news")),
         "reddit":             _format_reddit(of("reddit")),
         "product_hunt":       _format_ph(of("product_hunt")),
+        "news":               _format_news(of("news")),
     }
     # Topics are counted over every fetched item: a story still on today's lists
     # after being reported is still spreading.

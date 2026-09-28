@@ -6,8 +6,10 @@ Face, a thread on Hacker News, a post on Reddit) is what people are talking
 about, even when no single item has big numbers. The model gets these topics as
 a hint for the "top stories" section at the head of the report.
 
-Topics are names pulled from titles: words that aren't common English or
-generic tech vocabulary (Jev, Qwen3.8, MiMo, …). Items seen on earlier days
+Topics are names pulled from titles (Jev, Qwen3.8, MiMo, …): words written
+like a name in at least one title, minus a list of generic tech vocabulary.
+News headlines are ordinary sentences, so a plain stopword list lets words
+like "battery" or "billion" through; requiring a name-like spelling doesn't. Items seen on earlier days
 count too, so a story that is still spreading stays visible.
 """
 
@@ -23,6 +25,7 @@ SOURCE_LABELS = {
     "hacker_news":        "HN",
     "reddit":             "Reddit",
     "product_hunt":       "Product Hunt",
+    "news":               "科技媒体",   # all feeds count as one source
 }
 
 # Words that appear across sources every day and say nothing about the topic.
@@ -41,22 +44,44 @@ language large learning library llm llms ml model models network neural paper
 performance reasoning research system systems task tasks tool tools training
 generation based efficient scalable towards toward via survey approach method
 source open-source release released github hugging face huggingface
-ask tell world hand law trust human life home work works help world's image images video
+ask tell mode world hand law trust human life home work works help world's image images video
 videos text audio speech vision flash pro mini linear small tiny fast faster
 simple better scale scaling version update guide review study analysis
 """.split())
-
-_TOKEN = re.compile(r"[a-z][a-z0-9.+]*[a-z0-9+]|[a-z]")
-
 
 def item_title(item: dict) -> str:
     return item.get("title") or item.get("name", "")
 
 
-def _terms(item: dict) -> set[str]:
-    # "owner/repo-name", "Jev-style" → separate words
-    text = re.sub(r"[/_\-:()\[\],!?\"']", " ", item_title(item)).lower()
-    return {t for t in _TOKEN.findall(text) if len(t) >= 3 and t not in STOPWORDS and not t.isdigit()}
+def _words(item: dict) -> list[str]:
+    # "owner/repo-name", "Jev-style", "Anthropic’s" → separate words, case kept
+    return re.findall(r"[A-Za-z][A-Za-z0-9.+]*[A-Za-z0-9+]|[A-Za-z]", re.sub(r"[/_\-:()\[\],!?\"'’]", " ", item_title(item)))
+
+
+def _is_title_case(words: list[str]) -> bool:
+    """Paper titles capitalise every word, so a capital there says nothing."""
+    long = [w for w in words if len(w) >= 4]
+    return bool(long) and sum(w[0].isupper() for w in long) / len(long) > 0.6
+
+
+def _terms(item: dict) -> tuple[set[str], set[str]]:
+    """(every candidate word, the ones written like a name in this title).
+
+    Name-like: has a digit (Qwen3.8), capitals past the first letter (MiMo, GPT),
+    or a capital in the middle of a sentence-case title ("… in Nvidia stock").
+    """
+    words = _words(item)
+    title_case = _is_title_case(words)
+    terms, names = set(), set()
+    for i, word in enumerate(words):
+        term = word.lower().rstrip(".")
+        if len(term) < 3 or term in STOPWORDS or term.isdigit():
+            continue
+        terms.add(term)
+        if (any(c.isdigit() for c in word) or any(c.isupper() for c in word[1:])
+                or (word[0].isupper() and i > 0 and not title_case)):
+            names.add(term)
+    return terms, names
 
 
 def hot_topics(items: list[dict], max_topics: int = 10) -> list[dict]:
@@ -69,14 +94,18 @@ def hot_topics(items: list[dict], max_topics: int = 10) -> list[dict]:
     Topics whose items are a subset of a bigger topic's (qwen / qwen3.8) are merged away.
     """
     by_term: dict[str, list[dict]] = defaultdict(list)
+    name_like: set[str] = set()
     for item in items:
-        for term in _terms(item):
+        terms, names = _terms(item)
+        name_like |= names
+        for term in terms:
             by_term[term].append(item)
 
     topics = []
     for term, members in by_term.items():
         sources = {m["source"] for m in members}
-        if len(sources) < 2:
+        # the word must read as a name somewhere; then every mention counts ("mimo v2.6" on Reddit)
+        if len(sources) < 2 or term not in name_like:
             continue
         topics.append({"term": term, "sources": sources, "items": members})
     # widest spread first; among equals, topics with something new today
@@ -105,6 +134,7 @@ def format_hot_topics(topics: list[dict]) -> str:
         lines.append(f"- **{topic['term']}**（{len(topic['sources'])} 个来源：{' / '.join(topic['sources'])}）")
         for item in topic["items"][:4]:
             seen = "" if item.get("is_new", True) else "【前几天已报道】"
-            lines.append(f"  - {seen}[{SOURCE_LABELS.get(item['source'], item['source'])}] "
+            label = item.get("site") or SOURCE_LABELS.get(item["source"], item["source"])
+            lines.append(f"  - {seen}[{label}] "
                          f"[{item_title(item)}]({item['url']})")
     return "\n".join(lines)

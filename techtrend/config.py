@@ -49,6 +49,17 @@ DEFAULTS = {
         "hacker_news":        {"enabled": True, "max_items": 8},
         "reddit":             {"enabled": True, "subreddits": ["LocalLLaMA"], "max_items": 10},
         "product_hunt":       {"enabled": True, "max_items": 6},
+        "news": {
+            "enabled": True,
+            "feeds": [
+                {"name": "TechCrunch",  "url": "https://techcrunch.com/feed/"},
+                {"name": "The Verge",   "url": "https://www.theverge.com/rss/index.xml"},
+                {"name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index"},
+                {"name": "The Decoder", "url": "https://the-decoder.com/feed/"},
+            ],
+            "max_age_hours": 36,
+            "max_items": 25,
+        },
     },
     "notify": {"channels": []},
     "weekly": {"enabled": True},

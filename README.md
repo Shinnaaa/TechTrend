@@ -7,7 +7,7 @@
 <h1 align="center">TechTrend</h1>
 
 <p align="center">
-  A daily tech-intelligence briefing that reads GitHub, Hugging Face, Hacker News, Reddit and Product Hunt,<br>
+  A daily tech-intelligence briefing that reads GitHub, Hugging Face, Hacker News, Reddit, Product Hunt and tech news sites,<br>
   writes opinionated analysis with any LLM, and delivers it to WeChat, Telegram, Slack, email and more.<br>
   Runs free on GitHub Actions. No server.
 </p>
@@ -36,7 +36,7 @@ Most "AI news digests" restate the project description in nicer words. TechTrend
 | 📌 Top stories | 3–5 items, most important first. Topics that appear in several sources on the same day rank highest |
 | ⚡ Signals | 1–2 shifts, with the last 7 days as trend context |
 | 🛠️ This week | 1–2 concrete PoCs or evaluations to try |
-| 📂 By source | One line per item: GitHub Trending, Hugging Face models and papers, Hacker News, Reddit, Product Hunt |
+| 📂 By source | One line per item: tech news (TechCrunch, The Verge, Ars Technica, The Decoder), GitHub Trending, Hugging Face models and papers, Hacker News, Reddit, Product Hunt |
 
 The push notification's title is the first top story, so you see what happened without opening it. Every source can be switched off. Items already analysed on earlier days are skipped, and on quiet days (fewer than 5 new items) nothing is sent. **Every Sunday** a weekly report distils the week into top signals and trends.
 
@@ -129,6 +129,16 @@ sources:
     subreddits: [LocalLLaMA, MachineLearning, programming]
   product_hunt:
     enabled: false
+```
+
+**Different news sites** (any RSS or Atom feed; the list replaces the default one)
+
+```yaml
+sources:
+  news:
+    feeds:
+      - {name: TechCrunch, url: "https://techcrunch.com/feed/"}
+      - {name: 36Kr, url: "https://www.36kr.com/feed"}
 ```
 
 | Key | Default | Meaning |

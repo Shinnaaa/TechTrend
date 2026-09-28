@@ -46,6 +46,19 @@ sources:
   product_hunt:
     enabled: true
     max_items: 6
+  news:
+    enabled: true
+    # Any RSS or Atom feed. Tech news sites catch launches, funding, outages and
+    # policy stories that never reach GitHub or Hugging Face.
+    feeds:
+      - {name: TechCrunch,   url: "https://techcrunch.com/feed/"}
+      - {name: The Verge,    url: "https://www.theverge.com/rss/index.xml"}
+      - {name: Ars Technica, url: "https://feeds.arstechnica.com/arstechnica/index"}
+      - {name: The Decoder,  url: "https://the-decoder.com/feed/"}
+    # Only articles published within this many hours (feeds keep a few days of posts).
+    max_age_hours: 36
+    # Newest articles across all feeds that go to the model.
+    max_items: 25
 
 notify:
   # Push goes to every channel whose secrets are set (see README).

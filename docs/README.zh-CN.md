@@ -7,7 +7,7 @@
 <h1 align="center">TechTrend</h1>
 
 <p align="center">
-  每天自动读完 GitHub、Hugging Face、Hacker News、Reddit 和 Product Hunt，<br>
+  每天自动读完 GitHub、Hugging Face、Hacker News、Reddit、Product Hunt 和科技媒体，<br>
   用任意大模型写出有观点的技术分析，推送到微信、飞书、钉钉、Telegram、邮件等渠道。<br>
   免费跑在 GitHub Actions 上，不需要服务器。
 </p>
@@ -36,7 +36,7 @@
 | 📌 今日要闻 | 3–5 条，按重要性排序；同一天出现在多个来源的话题排在最前 |
 | ⚡ 趋势信号 | 1–2 条，以最近 7 天为趋势背景 |
 | 🛠️ 本周行动 | 1–2 件可以立刻动手的 PoC 或方案评估 |
-| 📂 分源速览 | 每条一行：GitHub Trending、Hugging Face 模型和论文、Hacker News、Reddit、Product Hunt |
+| 📂 分源速览 | 每条一行：科技媒体（TechCrunch、The Verge、Ars Technica、The Decoder）、GitHub Trending、Hugging Face 模型和论文、Hacker News、Reddit、Product Hunt |
 
 推送通知的标题就是第一条要闻，不点开也知道今天发生了什么。每个来源都可以单独关掉。之前分析过的条目会自动跳过；新条目少于 5 条的日子不打扰你。**每周日**还有一份周报，提炼一周的最强信号和趋势。
 
@@ -129,6 +129,16 @@ sources:
     subreddits: [LocalLLaMA, MachineLearning, programming]
   product_hunt:
     enabled: false
+```
+
+**换一批新闻网站**（任何 RSS 或 Atom 源都行；写了就替换默认列表）
+
+```yaml
+sources:
+  news:
+    feeds:
+      - {name: TechCrunch, url: "https://techcrunch.com/feed/"}
+      - {name: 36氪, url: "https://www.36kr.com/feed"}
 ```
 
 | 配置项 | 默认值 | 含义 |

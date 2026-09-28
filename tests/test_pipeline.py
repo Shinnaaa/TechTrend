@@ -2,14 +2,14 @@ from datetime import date
 
 import yaml
 
-from techtrend import config, formatter, pusher, ranker, report, summarizer
+from techtrend import config, fetcher, formatter, pusher, ranker, report, summarizer
 
 BLOCKS = {key: f"<{key} data>" for key in summarizer.SECTION_ORDER}
 
 
 def test_prompt_contains_every_enabled_section_in_order():
     prompt = summarizer._build_prompt("2026-09-25", "", BLOCKS)
-    headings = ["📌 今日要闻", "⚡ 趋势信号", "🛠️ 本周行动", "📂 分源速览", "GitHub Trending", "HuggingFace 热门模型",
+    headings = ["📌 今日要闻", "⚡ 趋势信号", "🛠️ 本周行动", "📂 分源速览", "📰 科技媒体", "GitHub Trending", "HuggingFace 热门模型",
                 "AI/ML 论文", "Hacker News", "Reddit r/LocalLLaMA", "Product Hunt", "今日原始数据", "### 今日热点候选"]
     positions = [prompt.index(h) for h in headings]
     assert positions == sorted(positions)
@@ -175,3 +175,43 @@ def test_report_helpers_fall_back_for_old_reports():
     assert report.digest(old) == "**信号**：y"
     assert pusher.push_title(old).startswith(config.lang_text("daily_title"))
     assert formatter._extract_highlights(old) == ["a"]
+
+
+RSS = """<?xml version="1.0"?><rss version="2.0"><channel><title>TC</title>
+<item><title>Older &amp; less</title><link>https://tc/a</link><pubDate>Sat, 26 Sep 2026 10:00:00 +0000</pubDate>
+<description><![CDATA[<p>Some <b>html</b></p>]]></description></item>
+<item><title>Newest</title><link>https://tc/b</link><pubDate>Sun, 27 Sep 2026 20:34:00 +0000</pubDate></item>
+</channel></rss>"""
+
+ATOM = """<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
+<entry><title>Verge story</title><link rel="alternate" href="https://verge/x"/>
+<published>2026-09-27T12:00:00-04:00</published><summary>Short</summary></entry></feed>"""
+
+
+def test_parse_feed_reads_rss_and_atom():
+    rss = fetcher.parse_feed(RSS, "TechCrunch")
+    assert [a["title"] for a in rss] == ["Newest", "Older & less"]
+    assert rss[1]["description"] == "Some html" and rss[0]["site"] == "TechCrunch" and rss[0]["source"] == "news"
+    atom = fetcher.parse_feed(ATOM, "The Verge")
+    assert atom[0]["url"] == "https://verge/x" and atom[0]["published"].hour == 12
+
+
+def test_news_block_is_newest_first_and_capped(monkeypatch):
+    monkeypatch.setitem(summarizer.SOURCES["news"], "max_items", 1)
+    items = [{"title": "old", "url": "u1", "site": "A", "published": "2026-09-26T10:00:00+00:00"},
+             {"title": "new", "url": "u2", "site": "B", "published": "2026-09-27T10:00:00+00:00"}]
+    block = summarizer._format_news(items)
+    assert "[new](u2) `B`" in block and "old" not in block
+
+
+def test_hot_topics_ignores_ordinary_words_in_headlines():
+    items = [
+        {"source": "news", "site": "TechCrunch", "title": "Sennheiser review: incredible battery life", "url": "n1"},
+        {"source": "hacker_news", "title": "Why battery life still lags", "url": "h1"},
+        {"source": "news", "site": "The Decoder", "title": "Researchers plug GPT-6 Astra into a robot", "url": "n2"},
+        {"source": "product_hunt", "title": "GPT-6 Sol & Luna", "url": "p1"},
+        {"source": "hf_daily_papers", "title": "Scaling Battery Chemistry Search", "url": "p2"},
+    ]
+    topics = ranker.hot_topics(items)
+    assert [t["term"] for t in topics] == ["gpt"]
+    assert "[The Decoder]" in ranker.format_hot_topics(topics)

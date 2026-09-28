@@ -11,6 +11,7 @@ import sys
 from datetime import date
 
 from .config import CONFIG, FORMATTED_DIR, LANGUAGES, REPORT_PATH, llm_client, thinking_body
+from .report import headlines
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -90,8 +91,8 @@ def _hard_wrap(body: str) -> str:
 
 
 def _extract_highlights(body: str, n: int = 3) -> list[str]:
-    """Names of the first n entries (their bold links), shown on the site's intel list."""
-    return re.findall(r"\*\*\[([^\]]+)\]\([^)]+\)\*\*", body)[:n]
+    """Shown on the site's intel list: the top stories, or for older reports the first n entry names."""
+    return headlines(body)[:n] or re.findall(r"\*\*\[([^\]]+)\]\([^)]+\)\*\*", body)[:n]
 
 
 def _translate(client, text: str, target_lang: str) -> str:

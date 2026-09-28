@@ -22,28 +22,23 @@
 
 ## Why
 
-Most "AI news digests" restate the project description in nicer words. TechTrend is tuned for the opposite: every item must carry one non-obvious insight, a concrete comparison against a named alternative, real numbers where they exist, a stated limitation, and one thing you could try this week. Phrases like "worth watching" or "redefines X" are banned in the prompt, with bad/good examples the model is asked to follow.
+Most "AI news digests" restate the project description in nicer words. TechTrend is tuned for the opposite: the stories several communities are talking about go to the top, and every line must carry one non-obvious point, real numbers where they exist and a stated limitation. Phrases like "worth watching" or "redefines X" are banned in the prompt, with bad/good examples the model is asked to follow.
 
 ## What you get
 
-**Every morning** a briefing like this, in Chinese, English or Japanese:
+**Every morning** a briefing in Chinese, English or Japanese that opens with the day's top stories:
 
-> **[openwhispr](https://github.com/OpenWhispr/openwhispr)** `JavaScript` ⭐7,427 +121
-> 💡 Cross-platform speech-to-text: local Nvidia Parakeet / Whisper, cloud via BYOK. Compared with the per-minute Whisper API, local inference has zero marginal cost… Limitation: with BYOK the user manages keys and quotas across several vendors.
-> 🎯 This week: run local Parakeet on 10 recordings and compare latency and accuracy against the Whisper API.
+> **1. Jev, a calibrated decision model, shows up on HF Papers, HN and Reddit the same day**
+> One call scores 10 kinds of alignment failure, where a generative judge needs one call per criterion. · [HF paper](https://huggingface.co/papers/2609.29429) / [HN](https://ollaya.dev/) / [Reddit](https://opper.ai/blog/jev-vs-kev-open-decision-model)
 
-| Section | Source |
+| Section | What's in it |
 |---|---|
-| 🔥 GitHub Trending picks | GitHub Trending (languages of your choice) |
-| 🤗 Trending models | Hugging Face, sorted by `trendingScore` |
-| 🧠 AI/ML papers | Hugging Face Daily Papers |
-| 💬 Hacker News | Algolia HN front page |
-| 🧵 Reddit | Top-of-day posts from subreddits of your choice |
-| 🚀 Product Hunt | Product Hunt RSS |
-| ⚡ Paradigm-shift signals | Cross-source synthesis, with the last 7 days as trend context |
-| 🛠️ This week's actions | Concrete PoCs, code reads or evaluations to try |
+| 📌 Top stories | 3–5 items, most important first. Topics that appear in several sources on the same day rank highest |
+| ⚡ Signals | 1–2 shifts, with the last 7 days as trend context |
+| 🛠️ This week | 1–2 concrete PoCs or evaluations to try |
+| 📂 By source | One line per item: GitHub Trending, Hugging Face models and papers, Hacker News, Reddit, Product Hunt |
 
-Every source can be switched off. Items already analysed on earlier days are skipped, and on quiet days (fewer than 5 new items) nothing is sent. **Every Sunday** a weekly report distils the week into top signals and trends.
+The push notification's title is the first top story, so you see what happened without opening it. Every source can be switched off. Items already analysed on earlier days are skipped, and on quiet days (fewer than 5 new items) nothing is sent. **Every Sunday** a weekly report distils the week into top signals and trends.
 
 ---
 

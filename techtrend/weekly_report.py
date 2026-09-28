@@ -10,6 +10,7 @@ from datetime import date, timedelta
 
 from .config import CONFIG, HISTORY_DIR, LANGUAGES, lang_text, llm_client, thinking_body
 from .notifiers import send_all
+from .report import digest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ SYSTEM_PROMPT = """\
 """
 
 WEEKLY_PROMPT_TEMPLATE = """\
-以下是过去 7 天（{start} ~ {end}）的每日技术情报摘要，请生成一份《{title}》。
+以下是过去 7 天（{start} ~ {end}）每日简报的要闻和趋势信号，请生成一份《{title}》。
 
 ## 格式要求
 ---
@@ -83,9 +84,9 @@ def run() -> int:
     # Build daily summaries block
     daily_summaries = ""
     for report_date, content in sorted(reports):
-        # Use first 800 chars of each daily report as summary
-        snippet = content[:800].strip()
-        daily_summaries += f"\n### {report_date}\n{snippet}\n...\n"
+        # Each day's top stories and signals. (The first 800 chars used to be
+        # taken here, which only ever covered the first GitHub projects.)
+        daily_summaries += f"\n### {report_date}\n{digest(content)}\n"
 
     start_date = sorted(d for d, _ in reports)[0]
     end_date   = sorted(d for d, _ in reports)[-1]

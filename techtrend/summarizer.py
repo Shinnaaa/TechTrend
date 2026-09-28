@@ -1,6 +1,7 @@
 """
 summarizer.py — LLM Analysis Engine
-Reads raw_intel.json (new items only), adds 7 days of history as trend context,
+Reads raw_intel.json (new items only) plus the topics that show up in several
+sources (ranker.py), adds 7 days of history as trend context,
 calls an OpenAI-compatible model, writes DAILY_REPORT.md and data/history/<date>.md.
 Sections follow the sources enabled in config.yml.
 """
@@ -12,6 +13,8 @@ import logging
 from datetime import date, timedelta
 
 from .config import CONFIG, HISTORY_DIR, LANGUAGES, RAW_INTEL_PATH, REPORT_PATH, lang_text, llm_client, thinking_body
+from .ranker import format_hot_topics, hot_topics
+from .report import digest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -60,42 +63,49 @@ SYSTEM_PROMPT = """\
 
 PROMPT_HEADER = """\
 今天是 {date}。以下是今日技术情报原始数据（仅包含过去未分析过的新条目），请生成《{title}》。
+读者每天只花两三分钟看这份简报：最重要的放最前面，每条说完就停，不写铺垫。
 
-只输出下列章节，按顺序，不增减章节：
+只输出下列章节，按顺序：
 
 ---
 # {title} · {date}
+
+## 📌 今日要闻
+3-5 条，按重要性从高到低排。选条目的依据，按优先级：
+1. "今日热点候选"中确实是同一件事、且出现在 2 个以上来源的话题——几个社区同时在讨论，是最强的热度信号。候选是程序按词匹配出来的，会有误报（同一个词、不相关的两件事），自己判断
+2. 单源异常高热：HN 👍、GitHub 单日星数、HF ❤️ 明显高于同来源其他条目
+3. 会改变工程决策的发布：新模型、重大版本、安全事件、许可证或价格变化
+热点候选里的条目如果全部标了【前几天已报道】，只在今天有新条目佐证时才入选，标题以"持续："开头。
+格式（标题不放链接）：
+**1. [一句话标题：谁发布了什么/发生了什么，带一个关键数字]**
+[为什么重要、影响哪类工程工作，1-2 句] · [来源名](链接) / [来源名](链接)
+
+## ⚡ 趋势信号
+1-2 条，格式：
+**[信号标题]**：[什么在变 + 对工程决策的直接影响，2 句以内]{trend_context}
+
+## 🛠️ 本周行动
+1-2 条，格式：
+- [ ] [动词开头 + 做什么 + 验证什么假设]
+
+## 📂 分源速览
+要闻里已经写过的条目这里不再出现。每条只写一行；某个来源没有值得写的条目，就省略它的小节。
 """
 
-# Instruction block per source: (heading shown in the report, how to write entries).
+# Instruction per source: (sub-heading in the overview, how to write its lines).
 SECTION_GUIDES = {
-    "github_trending": ("🔥 GitHub Trending 精选", """\
-每个入选项目格式：
-**[项目名](链接)** `语言` ⭐今日+N
-💡 [第一句直接说它用什么技术做到了什么，必须带数字（速度/内存/延迟/成功率）；如需对比，只写"比X快Yms"或"比X省ZMB"，禁止"不是X而是Y"结构；最后一句说局限或风险]
-🎯 [一件本周可落地的具体行动，格式：动词+做什么+验证什么假设；无行动价值则写"观察：等X指标达到Y再决策"]"""),
+    "github_trending": ("🔥 GitHub Trending", """\
+最多 5 条：- **[项目名](链接)** ⭐+今日星数：[用什么技术做到什么，带数字；如需对比只写"比X快Yms"；最后半句写局限]"""),
     "huggingface_models": ("🤗 HuggingFace 热门模型", """\
-从今日 trending 中挑 3-5 个真正值得关注的，其余跳过。格式：
-**[模型名](链接)** `任务类型` ❤️N ⬇️N/月
-💡 [直接说：参数量、量化级别、在哪个 benchmark 上得了多少分、推理速度是多少；如需对比写"比X高Y分"或"比X快Zms"；最后说适合替换哪个具体工作流环节]
-🎯 [一件本周可落地的事，或"同质化，跳过"]"""),
-    "huggingface_papers": ("🧠 AI/ML 前沿论文", """\
-每篇入选论文格式：
-**[论文标题](链接)**
-🔬 突破：[推翻/改进了哪个现有假设，尽量带量化数字]
-⚙️ 工程影响：[对训练/推理/部署流程的具体影响，而非"有助于提升性能"]"""),
-    "hacker_news": ("💬 Hacker News 技术热点", """\
-每条入选讨论格式：
-**[标题](链接)** 👍N 💬N
-🗣 [社区在争论什么，或帖子的核心工程结论是什么]"""),
-    "reddit": ("🧵 Reddit {subreddits} 今日热帖", """\
-挑 3-5 条有实质内容的，跳过纯问答或已被 GitHub/HN 覆盖的。格式：
-**[标题](链接)**
-🗣 [核心信息：社区在讨论什么技术结论，或帖子分享了哪个具体测试结果/发现]"""),
-    "product_hunt": ("🚀 Product Hunt 今日新品", """\
-每个入选产品格式：
-**[产品名](链接)**
-⚖️ 替代 [现有方案] → [核心差异化技术点；如差异化不足直接写"同质化，跳过"]"""),
+最多 3 条，同质化的微调/量化版跳过：- **[模型名](链接)** `任务类型`：[参数量、量化、benchmark 分数或速度；适合替换哪个工作流环节]"""),
+    "huggingface_papers": ("🧠 AI/ML 论文", """\
+最多 3 条：- **[论文标题](链接)**：[改进了哪个现有做法、幅度多少，对训练/推理/部署有什么具体影响]"""),
+    "hacker_news": ("💬 Hacker News", """\
+最多 4 条：- **[标题](链接)** 👍N：[社区在争论什么，或帖子的核心工程结论]"""),
+    "reddit": ("🧵 Reddit {subreddits}", """\
+最多 3 条，跳过纯提问和已被其他来源覆盖的：- **[标题](链接)**：[帖子给出的具体测试结果或发现]"""),
+    "product_hunt": ("🚀 Product Hunt", """\
+最多 2 条，同质化的不写：- **[产品名](链接)**：替代 [现有方案]，[差异化的技术点]"""),
 }
 
 # Order of sections in the report, and the raw-data label for each
@@ -108,18 +118,6 @@ DATA_LABELS = {
     "reddit":             "Reddit {subreddits} 今日热帖",
     "product_hunt":       "Product Hunt（新产品）",
 }
-
-PROMPT_FOOTER = """
-## ⚡ 技术范式变化信号
-2-3 条，格式：
-**[信号标题]**：[什么在变 + 为什么现在变 + 对工程决策的直接影响]{trend_context}
-
-## 🛠️ 本周行动清单
-2-3 条，格式：
-- [ ] [动词开头 + 做什么 + 预计耗时 + 验证什么假设]
-
----
-"""
 
 LANGUAGE_DIRECTIVE = """
 ## 输出语言
@@ -134,7 +132,7 @@ FOCUS_DIRECTIVE = """
 """
 
 TREND_CONTEXT_TEMPLATE = """
-> **注意**：以下是最近 7 天的趋势背景，请在"技术范式变化信号"中识别延续性趋势与新兴信号：
+> 以下是最近 7 天的要闻和信号，用来判断今天的信号是延续还是新出现的；已经报道过的事不要当成新闻重复写：
 {history_summary}"""
 
 
@@ -147,17 +145,18 @@ def _system_prompt() -> str:
     return SYSTEM_PROMPT + (FOCUS_DIRECTIVE.format(focus=focus) if focus else "")
 
 
-def _build_prompt(report_date: str, trend_context: str, data_blocks: dict[str, str]) -> str:
+def _build_prompt(report_date: str, trend_context: str, data_blocks: dict[str, str], hot_block: str = "") -> str:
     """Report skeleton + raw data, limited to the enabled sources."""
     enabled = [key for key in SECTION_ORDER if SOURCES[key]["enabled"]]
-    parts = [PROMPT_HEADER.format(date=report_date, title=lang_text("daily_title"))]
+    parts = [PROMPT_HEADER.format(date=report_date, title=lang_text("daily_title"), trend_context=trend_context)]
     for key in enabled:
         heading, guide = SECTION_GUIDES[key]
-        parts.append(f"\n## {heading.format(subreddits=_subreddits())}\n{guide}\n")
-    parts.append(PROMPT_FOOTER.format(trend_context=trend_context))
+        parts.append(f"\n### {heading.format(subreddits=_subreddits())}\n{guide}\n")
+    parts.append("\n---\n")
     if LANG != "zh":
         parts.append(LANGUAGE_DIRECTIVE.format(language=LANGUAGES[LANG]["name"]))
     parts.append("\n## 今日原始数据\n")
+    parts.append(f"\n### 今日热点候选（程序统计：同一名称出现在多个来源）\n{hot_block or format_hot_topics([])}\n")
     for key in enabled:
         parts.append(f"\n### {DATA_LABELS[key].format(subreddits=_subreddits())}\n{data_blocks[key]}\n")
     return "".join(parts)
@@ -171,7 +170,7 @@ def _load_raw_intel() -> dict:
 
 
 def _load_history_context() -> str:
-    """Read last 7 days of report headlines for trend continuity."""
+    """Last 7 days' top stories and signals, for trend continuity."""
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     today = date.today()
     snippets = []
@@ -181,10 +180,8 @@ def _load_history_context() -> str:
         hist_file = HISTORY_DIR / f"{past_date}.md"
         if not hist_file.exists():
             continue
-        content = hist_file.read_text(encoding="utf-8")
-        # Extract only the first 600 chars as a summary snippet
-        snippet = content[:600].replace("\n", " ").strip()
-        snippets.append(f"- {past_date}: {snippet}...")
+        snippet = digest(hist_file.read_text(encoding="utf-8"), limit=700).replace("\n", " ")
+        snippets.append(f"- {past_date}: {snippet}")
 
     if not snippets:
         return ""
@@ -370,7 +367,11 @@ def run() -> None:
         "reddit":             _format_reddit(of("reddit")),
         "product_hunt":       _format_ph(of("product_hunt")),
     }
-    prompt = _build_prompt(report_date, _load_history_context(), data_blocks)
+    # Topics are counted over every fetched item: a story still on today's lists
+    # after being reported is still spreading.
+    topics = hot_topics(all_items)
+    log.info("Hot topics: %s", ", ".join(f"{t['term']} ({len(t['sources'])})" for t in topics) or "none")
+    prompt = _build_prompt(report_date, _load_history_context(), data_blocks, format_hot_topics(topics))
 
     report_content = _call_api(client, prompt)
     if not report_content.strip():

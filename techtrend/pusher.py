@@ -15,6 +15,7 @@ from datetime import date
 
 from .config import CONFIG, REPORT_PATH, lang_text
 from .notifiers import CHANNELS, active_channels, send_all
+from .report import headlines
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -63,7 +64,16 @@ def main() -> int:
         return 0
     content = REPORT_PATH.read_text(encoding="utf-8")
     log.info("Report loaded: %d chars", len(content))
-    return deliver(f"{lang_text('daily_title')} · {date.today()}", content)
+    return deliver(push_title(content), content)
+
+
+def push_title(report: str) -> str:
+    """The top story, so the notification itself says what happened today."""
+    tops = headlines(report)
+    if not tops:
+        return f"{lang_text('daily_title')} · {date.today()}"
+    head = tops[0] if len(tops[0]) <= 60 else tops[0][:59] + "…"
+    return f"📌 {head}"
 
 
 if __name__ == "__main__":

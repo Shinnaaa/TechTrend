@@ -2,15 +2,15 @@ from datetime import date
 
 import yaml
 
-from techtrend import config, formatter, summarizer
+from techtrend import config, formatter, pusher, ranker, report, summarizer
 
 BLOCKS = {key: f"<{key} data>" for key in summarizer.SECTION_ORDER}
 
 
 def test_prompt_contains_every_enabled_section_in_order():
     prompt = summarizer._build_prompt("2026-09-25", "", BLOCKS)
-    headings = ["GitHub Trending 精选", "HuggingFace 热门模型", "AI/ML 前沿论文", "Hacker News 技术热点",
-                "Reddit r/LocalLLaMA 今日热帖", "Product Hunt 今日新品", "技术范式变化信号", "本周行动清单"]
+    headings = ["📌 今日要闻", "⚡ 趋势信号", "🛠️ 本周行动", "📂 分源速览", "GitHub Trending", "HuggingFace 热门模型",
+                "AI/ML 论文", "Hacker News", "Reddit r/LocalLLaMA", "Product Hunt", "今日原始数据", "### 今日热点候选"]
     positions = [prompt.index(h) for h in headings]
     assert positions == sorted(positions)
     assert all(block in prompt for block in BLOCKS.values())
@@ -114,3 +114,64 @@ def test_empty_report_is_retried_and_kept_if_retry_fails():
     assert summarizer._call_api(client, "p") == "# report"
     client, _ = _client([("# partial", "length"), ("", "stop")])
     assert summarizer._call_api(client, "p") == "# partial"
+
+
+def _item(source, title, new=True):
+    return {"source": source, "title": title, "url": f"https://x/{source}/{title}", "is_new": new}
+
+
+def test_hot_topics_finds_a_name_shared_across_sources():
+    items = [
+        _item("hf_daily_papers", "Just Ask Jev: RL for Calibrated Decisions"),
+        _item("hacker_news", "Ollaya – Ollama for open-source, Jev-style decision models"),
+        _item("reddit", "Jev vs. Kev: open decision model side by side", new=False),
+        _item("reddit", "The best open model for your data"),
+        _item("hacker_news", "Show HN: The best way to build a model"),
+    ]
+    topics = ranker.hot_topics(items)
+    assert [t["term"] for t in topics] == ["jev"]
+    assert topics[0]["sources"] == ["HF 论文", "HN", "Reddit"]
+    block = ranker.format_hot_topics(topics)
+    assert block.count("【前几天已报道】") == 1 and "Jev vs. Kev" in block
+
+
+def test_hot_topics_drops_terms_covered_by_a_wider_one():
+    items = [_item("hf_trending_models", "Qwen/Qwen3.8-27B"), _item("reddit", "Qwen Qwen3.8 27b on 16gb VRAM")]
+    assert len(ranker.hot_topics(items)) == 1
+
+
+NEW_REPORT = """# 每日技术情报简报 · 2026-09-28
+
+## 📌 今日要闻
+**1. Jev 校准决策模型三源同日出现，单次调用给 10 类风险打分**
+审核链路可以从每类一次调用压到一次。 · [HF 论文](https://a) / [HN](https://b)
+
+**2. 持续：[Qwen3.8](https://q) 量化版在 16GB 显卡跑到 9 tok/s**
+本地部署门槛再降一档。 · [Reddit](https://c)
+
+## ⚡ 趋势信号
+**决策模型成为独立品类**：输出是概率不是文本。
+
+## 📂 分源速览
+### 🔥 GitHub Trending
+- **[openrig](https://g)** ⭐+80：两个 CLI agent 共享上下文。
+"""
+
+
+def test_report_helpers_read_top_stories_and_signals():
+    assert report.headlines(NEW_REPORT) == [
+        "Jev 校准决策模型三源同日出现，单次调用给 10 类风险打分",
+        "持续：Qwen3.8 量化版在 16GB 显卡跑到 9 tok/s",
+    ]
+    digest = report.digest(NEW_REPORT)
+    assert "Jev" in digest and "决策模型成为独立品类" in digest and "openrig" not in digest
+    assert pusher.push_title(NEW_REPORT).startswith("📌 Jev 校准决策模型")
+    assert formatter._extract_highlights(NEW_REPORT)[0].startswith("Jev")
+
+
+def test_report_helpers_fall_back_for_old_reports():
+    old = "# 简报\n\n## 🔥 GitHub Trending 精选\n**[a](u)** x\n\n## ⚡ 技术范式变化信号\n**信号**：y\n"
+    assert report.headlines(old) == []
+    assert report.digest(old) == "**信号**：y"
+    assert pusher.push_title(old).startswith(config.lang_text("daily_title"))
+    assert formatter._extract_highlights(old) == ["a"]

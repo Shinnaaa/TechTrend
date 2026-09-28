@@ -24,9 +24,11 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 |------|------|
 | `config.yml` / `techtrend/config.py` | 所有非密钥设置（报告语言、关注方向、数据源开关、LLM、网站语言）；`config.py` 合并默认值、读本地 `.env`、定义路径 |
 | `techtrend/fetcher.py` | 抓取已启用的数据源，输出 `raw_intel.json`，维护 `data/seen_urls.json` 去重 |
-| `techtrend/summarizer.py` | 按启用的数据源动态拼 prompt，调 LLM，输出 `DAILY_REPORT.md` + `data/history/YYYY-MM-DD.md` |
+| `techtrend/ranker.py` | 找"今日热点候选"：同一名称（Jev、Qwen3.8…）出现在 ≥2 个来源的话题，含之前见过的条目（标"前几天已报道"） |
+| `techtrend/summarizer.py` | 按启用的数据源动态拼 prompt（附热点候选），调 LLM，输出 `DAILY_REPORT.md` + `data/history/YYYY-MM-DD.md` |
+| `techtrend/report.py` | 按 emoji 读回报告里的 📌 要闻 / ⚡ 信号：推送标题、周报输入、趋势背景、网站 highlights 都用它 |
 | `techtrend/notifiers.py` | 11 个推送渠道（PushPlus、Server酱、企业微信、飞书、钉钉、Telegram、Discord、Slack、邮件、ntfy、Webhook），按平台上限分段、转换 Markdown |
-| `techtrend/pusher.py` | 推送日报；`--list` 看哪些渠道已配置，`--test` 发测试消息 |
+| `techtrend/pusher.py` | 推送日报，标题是第一条要闻；`--list` 看哪些渠道已配置，`--test` 发测试消息 |
 | `techtrend/formatter.py` | 可选：翻译成 `website.languages`，生成 Jekyll post 到 `_formatted/`（含 `title_<lang>`、`highlights`、条目行硬换行） |
 | `techtrend/weekly_report.py` | 读最近 7 天 history，生成周报并推送，保存 `data/history/weekly_*.md` |
 | `scripts/state.sh` | `load` 把 `data` 分支取到 `data/`（不存在就新建），`save` 提交回去 |
@@ -72,6 +74,15 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 
 ## 已知问题与历史决策
 
+### 2026-09-28 热门话题被埋没，日报太长（改版）
+- 现象：Jev（校准决策模型）9/26 同时出现在 HF 论文、HN、Reddit，日报其实写了，但分散在第 3–5 节和结尾的"范式信号"里，推送里要往下翻很久；周报则完全没提。
+- 周报漏掉的根因：`weekly_report.py` 只取每份日报的前 800 字，而日报约 14k 字，前 800 字只够放 GitHub Trending 的头两个项目。summarizer 的 7 天趋势背景同样只取前 600 字。
+- 改法：
+  - 报告结构改为 📌 今日要闻（3–5 条，按重要性排）→ ⚡ 趋势信号（1–2）→ 🛠️ 本周行动（1–2）→ 📂 分源速览（每条一行，每源限 2–5 条，要闻里写过的不再重复）。去掉了每条目的 🎯 行动行，篇幅约减半。
+  - `ranker.py` 在调 LLM 前找跨来源话题，作为"今日热点候选"交给模型；要闻的选择优先级：跨来源话题 > 单源异常高热 > 改变工程决策的发布。词匹配有误报（"hand"、"linear" 这类），交给模型判断，停用词表只挡最常见的。试过用历史报告的文档频率过滤通用词，不行：Qwen3.8 这种长期热点和通用词一样高频。
+  - 热点统计用**全部**抓到的条目（包括 seen），这样已经报道过但还在各榜单上的话题也算热度；只有全部是旧条目时，要求模型写成"持续：…"。
+  - 推送标题 = 第一条要闻（微信通知里直接看到）；周报、趋势背景、网站 highlights 都改用 `report.digest()` / `report.headlines()` 取要闻和信号，旧格式报告回退到 ⚡ 一节。
+
 ### 2026-09-25 日报被截断
 - 现象：停跑 17 天后第一次运行，新条目 101 条，prompt 变长，推理用掉 5357 token，7000 预算只剩 1600 给正文，`finish_reason=length`，报告停在 HuggingFace 一节（3071 字符，平时约 7000）。推送和网站都发了半份。
 - 修复：`_call_api` 在正文为空**或被截断**时，关闭 thinking、用完整 `llm.max_tokens` 重写一次（原来只处理"空"，且回退预算只有 3500，不够一份完整报告的 4–5k token）。重试后仍截断会打 `::warning::`。有测试覆盖三种情况。
@@ -109,6 +120,8 @@ GitHub 仓库：https://github.com/Shinnaaa/TechTrend
 
 ## Prompt 设计要点（summarizer.py）
 
+- 结构：📌 要闻 → ⚡ 信号 → 🛠️ 行动 → 📂 分源速览（`###` 小节）。其他模块按 emoji 找章节，改标题文字没关系，改 emoji 要同步改 `report.py`
+- 要闻格式 `**1. 标题**` + 下一行"为什么重要 · 来源链接"，`report.headlines()` 靠这个格式解析
 - 角色：犀利、反套话的首席技术架构师，面向高级工程师
 - 禁止：空话套话（"值得关注"、"推动生态"等）
 - 禁止句式：`不是又一个X而是Y`、`直接攻击了X的痛点`、`核心差异在于`

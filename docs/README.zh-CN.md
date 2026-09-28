@@ -22,28 +22,23 @@
 
 ## 为什么做这个
 
-大多数"AI 资讯日报"只是把项目简介换个说法再讲一遍。TechTrend 反过来调教：每一条都必须有一个看标题想不到的洞见、一个点名道姓的具体对比、能拿到的真实数字、明确的局限，以及一件本周就能动手做的事。"值得关注""重新定义了 X"这类套话在 prompt 里明令禁止，并附有差/好写法示例让模型照着写。
+大多数"AI 资讯日报"只是把项目简介换个说法再讲一遍。TechTrend 反过来调教：几个社区同时在讨论的事放在最前面，每一行都必须有一个看标题想不到的点、能拿到的真实数字和明确的局限。"值得关注""重新定义了 X"这类套话在 prompt 里明令禁止，并附有差/好写法示例让模型照着写。
 
 ## 你会收到什么
 
-**每天早上**一份这样的简报，可选中文、英文或日文：
+**每天早上**一份简报，可选中文、英文或日文，开头就是当天要闻：
 
-> **[openwhispr](https://github.com/OpenWhispr/openwhispr)** `JavaScript` ⭐7,427 +121
-> 💡 跨平台语音转文字应用，本地用 Nvidia Parakeet/Whisper、云端 BYOK，对比 OpenAI Whisper API 的按分钟计费，本地推理零边际成本……局限：BYOK 模式下用户需自行管理多家云厂商的 API key 和配额。
-> 🎯 本周在主力开发机上配置本地 Parakeet 模型，对比 Whisper API 在同样 10 段录音上的转录延迟和准确率。
+> **1. 校准决策模型 Jev 同日出现在 HF 论文、HN 和 Reddit**
+> 单次调用给 10 类 alignment failure 打出校准概率，生成式 judge 每条标准要调用一次。 · [HF 论文](https://huggingface.co/papers/2609.29429) / [HN](https://ollaya.dev/) / [Reddit](https://opper.ai/blog/jev-vs-kev-open-decision-model)
 
-| 板块 | 来源 |
+| 板块 | 内容 |
 |---|---|
-| 🔥 GitHub Trending 精选 | GitHub Trending（语言可自选） |
-| 🤗 热门模型 | Hugging Face，按 `trendingScore` 排序 |
-| 🧠 AI/ML 前沿论文 | Hugging Face Daily Papers |
-| 💬 Hacker News 技术热点 | Algolia HN 首页 |
-| 🧵 Reddit 热帖 | 自选版块的当日 Top |
-| 🚀 Product Hunt 今日新品 | Product Hunt RSS |
-| ⚡ 技术范式变化信号 | 跨来源综合判断，以最近 7 天为趋势背景 |
-| 🛠️ 本周行动清单 | 可以立刻动手的 PoC、代码阅读或方案评估 |
+| 📌 今日要闻 | 3–5 条，按重要性排序；同一天出现在多个来源的话题排在最前 |
+| ⚡ 趋势信号 | 1–2 条，以最近 7 天为趋势背景 |
+| 🛠️ 本周行动 | 1–2 件可以立刻动手的 PoC 或方案评估 |
+| 📂 分源速览 | 每条一行：GitHub Trending、Hugging Face 模型和论文、Hacker News、Reddit、Product Hunt |
 
-每个来源都可以单独关掉。之前分析过的条目会自动跳过；新条目少于 5 条的日子不打扰你。**每周日**还有一份周报，提炼一周的最强信号和趋势。
+推送通知的标题就是第一条要闻，不点开也知道今天发生了什么。每个来源都可以单独关掉。之前分析过的条目会自动跳过；新条目少于 5 条的日子不打扰你。**每周日**还有一份周报，提炼一周的最强信号和趋势。
 
 ---
 
